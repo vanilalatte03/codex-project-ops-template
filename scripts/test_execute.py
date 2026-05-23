@@ -4,10 +4,8 @@ execute.py 리팩터링 안전망 테스트.
 """
 
 import json
-import os
 import subprocess
 import sys
-import textwrap
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -67,6 +65,7 @@ def phase_dir(tmp_project):
         ],
     }
     (d / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False))
+    (d / "README.md").write_text("# Phase README\n\n현재 phase 목표")
     (d / "step2.md").write_text("# Step 2: UI\n\nUI를 구현하세요.")
 
     return d
@@ -187,6 +186,12 @@ class TestLoadGuardrails:
         assert "adr/0001-test" in result
         assert "Split ADR" in result
 
+    def test_loads_phase_readme(self, executor, tmp_project):
+        with patch.object(ex, "ROOT", tmp_project):
+            result = executor._load_guardrails()
+        assert "현재 Phase README" in result
+        assert "현재 phase 목표" in result
+
     def test_no_agents_md(self, executor, tmp_project):
         (tmp_project / "AGENTS.md").unlink()
         with patch.object(ex, "ROOT", tmp_project):
@@ -287,7 +292,7 @@ class TestBuildPreamble:
 
     def test_includes_commit_example(self, executor):
         result = executor._build_preamble("", "")
-        assert "feat(mvp):" in result
+        assert "feat: mvp N단계" in result
 
     def test_includes_rules(self, executor):
         result = executor._build_preamble("", "")
@@ -368,6 +373,33 @@ class TestUpdateTopIndex:
 
 
 # ---------------------------------------------------------------------------
+# _ensure_clean_worktree
+# ---------------------------------------------------------------------------
+
+class TestEnsureCleanWorktree:
+    def test_clean_worktree_passes(self, executor):
+        executor._run_git = lambda *args: MagicMock(returncode=0, stdout="", stderr="")
+
+        executor._ensure_clean_worktree()
+
+    def test_dirty_worktree_exits(self, executor):
+        executor._run_git = lambda *args: MagicMock(returncode=0, stdout=" M README.md\n", stderr="")
+
+        with pytest.raises(SystemExit) as exc_info:
+            executor._ensure_clean_worktree()
+
+        assert exc_info.value.code == 1
+
+    def test_git_status_failure_exits(self, executor):
+        executor._run_git = lambda *args: MagicMock(returncode=1, stdout="", stderr="not a repo")
+
+        with pytest.raises(SystemExit) as exc_info:
+            executor._ensure_clean_worktree()
+
+        assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
 # _checkout_branch (mocked)
 # ---------------------------------------------------------------------------
 
@@ -384,7 +416,7 @@ class TestCheckoutBranch:
 
     def test_already_on_branch(self, executor):
         self._mock_git(executor, [
-            MagicMock(returncode=0, stdout="feat-mvp\n", stderr=""),
+            MagicMock(returncode=0, stdout="codex/mvp\n", stderr=""),
         ])
         executor._checkout_branch()  # should return without checkout
 
@@ -441,8 +473,8 @@ class TestCommitStep:
 
         commit_calls = [c for c in calls if c[0] == "commit"]
         assert len(commit_calls) == 2
-        assert "feat(mvp):" in commit_calls[0][2]
-        assert "chore(mvp):" in commit_calls[1][2]
+        assert "feat: mvp 2단계 ui 구현" in commit_calls[0][2]
+        assert "chore: mvp 2단계 실행 기록 정리" in commit_calls[1][2]
 
     def test_no_code_changes_skips_feat_commit(self, executor):
         call_count = {"diff": 0}
@@ -461,7 +493,52 @@ class TestCommitStep:
 
         commit_msgs = [c[2] for c in calls if c[0] == "commit"]
         assert len(commit_msgs) == 1
-        assert "chore" in commit_msgs[0]
+        assert "chore: mvp 2단계 실행 기록 정리" in commit_msgs[0]
+
+
+# ---------------------------------------------------------------------------
+# step-only selection and run flow
+# ---------------------------------------------------------------------------
+
+class TestStepOnly:
+    def test_select_step_allows_next_pending_step_only(self, executor):
+        executor._step_number = 2
+
+        selected = executor._select_single_step()
+
+        assert selected["step"] == 2
+
+    def test_select_step_rejects_non_pending_target(self, executor):
+        executor._step_number = 1
+
+        with pytest.raises(SystemExit) as exc_info:
+            executor._select_single_step()
+
+        assert exc_info.value.code == 1
+
+    def test_next_step_only_selects_next_pending(self, executor):
+        executor._next_step_only = True
+
+        selected = executor._select_single_step()
+
+        assert selected["step"] == 2
+
+    def test_step_only_run_with_remaining_steps_does_not_finalize(self, executor):
+        calls = []
+        executor._next_step_only = True
+        executor._ensure_clean_worktree = lambda: calls.append("clean")
+        executor._checkout_branch = lambda: calls.append("checkout")
+        executor._load_guardrails = lambda: ""
+        executor._load_command_context = lambda: ""
+        executor._ensure_created_at = lambda: calls.append("created")
+        executor._execute_one_step = lambda guardrails, command_context: True
+        executor._has_pending_steps = lambda: True
+        executor._push_current_branch = lambda: calls.append("push")
+        executor._finalize = lambda: (_ for _ in ()).throw(AssertionError("finalize should not run"))
+
+        executor.run()
+
+        assert calls == ["clean", "checkout", "created", "push"]
 
 
 # ---------------------------------------------------------------------------
@@ -569,6 +646,37 @@ class TestMainCli:
                 with pytest.raises(SystemExit) as exc_info:
                     ex.main()
                 assert exc_info.value.code == 1
+
+    def test_step_and_next_step_only_conflict_exits(self):
+        with patch("sys.argv", ["execute.py", "0-mvp", "--step", "0", "--next-step-only"]):
+            with pytest.raises(SystemExit) as exc_info:
+                ex.main()
+            assert exc_info.value.code == 2
+
+    def test_cli_passes_branch_and_step_options(self):
+        captured = {}
+
+        class DummyExecutor:
+            def __init__(self, phase_dir, **kwargs):
+                captured["phase_dir"] = phase_dir
+                captured.update(kwargs)
+
+            def run(self):
+                captured["ran"] = True
+
+        with patch("sys.argv", ["execute.py", "0-mvp", "--branch", "codex/test", "--step", "2", "--push"]):
+            with patch.object(ex, "StepExecutor", DummyExecutor):
+                ex.main()
+
+        assert captured == {
+            "phase_dir": "0-mvp",
+            "auto_push": True,
+            "unsafe": False,
+            "branch_name": "codex/test",
+            "step_number": 2,
+            "next_step_only": False,
+            "ran": True,
+        }
 
 
 # ---------------------------------------------------------------------------

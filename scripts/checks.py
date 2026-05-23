@@ -14,6 +14,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
 CHECK_NAMES = ("lint", "test", "build")
+REQUIRED_CHECK_NAMES = ("test", "build")
 PLACEHOLDER_MARKERS = ("<", ">", "{", "}", "...", "TODO", "TBD")
 
 
@@ -190,19 +191,38 @@ def _flatten(commands: dict[str, list[CheckCommand]]) -> list[CheckCommand]:
 
 def collect_checks(root: Path = ROOT, stage: str = "manual") -> list[CheckCommand]:
     del stage  # stages share the same lint/test/build order for now.
-    for provider in (commands_from_profile, commands_from_docs, detect_commands):
-        commands = provider(root)
-        checks = _flatten(commands)
-        if checks:
-            return checks
-    return []
+    providers = [
+        commands_from_profile(root),
+        commands_from_docs(root),
+        detect_commands(root),
+    ]
+    selected: dict[str, list[CheckCommand]] = {}
+    for name in CHECK_NAMES:
+        for commands in providers:
+            if commands.get(name):
+                selected[name] = commands[name]
+                break
+    return _flatten(selected)
+
+
+def missing_required_checks(checks: Iterable[CheckCommand]) -> list[str]:
+    present = {check.name for check in checks}
+    return [name for name in REQUIRED_CHECK_NAMES if name not in present]
 
 
 def run_checks(checks: Iterable[CheckCommand], root: Path = ROOT) -> int:
     checks = list(checks)
-    if not checks:
-        print("No lint/test/build commands configured or detected.")
-        return 0
+    missing = missing_required_checks(checks)
+    if missing:
+        available = ", ".join(check.name for check in checks) or "none"
+        print(
+            "Missing required check commands: "
+            + ", ".join(missing)
+            + ". Configure docs/COMMANDS.md or .codex/project-profile.json. "
+            + f"Available checks: {available}.",
+            file=sys.stderr,
+        )
+        return 1
 
     for check in checks:
         print(f"$ {check.command}  # {check.name}, {check.source}")

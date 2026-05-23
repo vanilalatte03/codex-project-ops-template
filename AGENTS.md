@@ -22,10 +22,10 @@
 ## 디렉터리 규칙
 - 제품 요구사항은 `docs/PRD.md`에 둔다.
 - 아키텍처와 데이터 흐름은 `docs/ARCHITECTURE.md`에 둔다.
-- 기술 결정은 `docs/ADR.md`에 둔다.
-- ADR이 4개 이상이면 `docs/adr/0001-title.md` 형식으로 분리하고 `docs/ADR.md`는 인덱스로 유지한다.
+- 기술 결정은 `docs/adr/0001-title.md` 형식으로 둔다.
+- `docs/ADR.md`는 ADR 인덱스로 유지한다.
 - 실행 명령은 `docs/COMMANDS.md`를 단일 출처로 삼는다.
-- phase 작업은 `phases/{phase}/index.json`, `phases/{phase}/stepN.md`에 둔다.
+- phase 작업은 `phases/{phase}/README.md`, `phases/{phase}/index.json`, `phases/{phase}/stepN.md`에 둔다.
 - phase 실패 기록은 `issues/{phase}/issue-N.md`에 둔다.
 
 ## 테스트와 검증
@@ -39,14 +39,16 @@
 - 코드 변경은 현재 step 범위에 맞춘다.
 - 사용자의 기존 변경은 되돌리지 않는다.
 - 큰 작업은 Harness skill로 phase/step 단위로 나눈다.
+- step PR 자동 루프는 `scripts/autopilot.py <phase> --base main --max-review-fixes 2`를 사용한다.
 - step 완료 시 `phases/{phase}/index.json`의 status와 summary를 갱신한다.
-- 실패가 반복되면 issue를 만들고 fix step을 추가한다.
+- step PR 리뷰가 실패하면 같은 PR 브랜치에서 수정하고 `issues/{phase}/issue-N.md`에 기록한다.
 - 자체 리뷰는 review skill 기준으로 수행한다.
 
 ## 커밋/PR 규칙
 - 커밋 메시지는 Conventional Commits 형식을 사용한다.
 - 하나의 커밋에는 하나의 의도만 담는다.
 - phase 구현 커밋과 phase 메타데이터 커밋은 분리할 수 있다.
+- step PR은 Draft로 만들고 로컬 검증과 자체 리뷰가 통과한 경우에만 ready 전환 후 squash merge한다.
 - PR 본문에는 작업 내용, 변경 이유, 테스트 및 확인 결과를 적는다.
 
 ## 명령어
@@ -55,4 +57,5 @@
 - 테스트: `<docs/COMMANDS.md의 test 명령>`
 - 빌드: `<docs/COMMANDS.md의 build 명령>`
 - 수동 검증: `python3 scripts/checks.py --stage manual`
+- Step PR 루프: `python3 scripts/autopilot.py <phase-name> --base main --max-review-fixes 2`
 - 환경 점검: `python3 scripts/doctor.py`

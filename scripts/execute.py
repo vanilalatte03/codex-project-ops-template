@@ -3,13 +3,12 @@
 Harness Step Executor — phase 내 step을 순차 실행하고 자가 교정한다.
 
 Usage:
-    python3 scripts/execute.py <phase-dir> [--push]
+    python3 scripts/execute.py <phase-dir> [--push] [--branch <branch-name>]
 """
 
 import argparse
 import contextlib
 import json
-import os
 import subprocess
 import sys
 import threading
@@ -56,11 +55,15 @@ class StepExecutor:
     """Phase 디렉토리 안의 step들을 순차 실행하는 하네스."""
 
     MAX_RETRIES = 3
-    FEAT_MSG = "feat({phase}): step {num} — {name}"
-    CHORE_MSG = "chore({phase}): step {num} output"
+    FEAT_MSG = "feat: {phase} {num}단계 {name} 구현"
+    CHORE_MSG = "chore: {phase} {num}단계 실행 기록 정리"
+    COMPLETION_MSG = "chore: {phase} 완료 상태 기록"
     TZ = timezone(timedelta(hours=9))
 
-    def __init__(self, phase_dir_name: str, *, auto_push: bool = False, unsafe: bool = False):
+    def __init__(self, phase_dir_name: str, *, auto_push: bool = False,
+                 unsafe: bool = False, branch_name: Optional[str] = None,
+                 step_number: Optional[int] = None,
+                 next_step_only: bool = False):
         self._root = str(ROOT)
         self._phases_dir = ROOT / "phases"
         self._phase_dir = self._phases_dir / phase_dir_name
@@ -68,6 +71,9 @@ class StepExecutor:
         self._top_index_file = self._phases_dir / "index.json"
         self._auto_push = auto_push
         self._unsafe = unsafe
+        self._branch_name = branch_name
+        self._step_number = step_number
+        self._next_step_only = next_step_only
 
         if not self._phase_dir.is_dir():
             print(f"ERROR: {self._phase_dir} not found")
@@ -82,15 +88,27 @@ class StepExecutor:
         self._project = idx.get("project", "project")
         self._phase_name = idx.get("phase", phase_dir_name)
         self._total = len(idx["steps"])
+        if self._branch_name is None:
+            self._branch_name = f"codex/{self._phase_name}"
 
     def run(self):
         self._print_header()
         self._check_blockers()
+        self._ensure_clean_worktree()
         self._checkout_branch()
         guardrails = self._load_guardrails()
         command_context = self._load_command_context()
         self._ensure_created_at()
-        self._execute_all_steps(guardrails, command_context)
+        if self._step_number is not None or self._next_step_only:
+            ran = self._execute_one_step(guardrails, command_context)
+            if not ran:
+                return
+            if self._has_pending_steps():
+                self._push_current_branch()
+                print(f"\n  Step-only run completed for '{self._phase_name}'.")
+                return
+        else:
+            self._execute_all_steps(guardrails, command_context)
         self._finalize()
 
     # --- timestamps ---
@@ -114,8 +132,32 @@ class StepExecutor:
         cmd = ["git"] + list(args)
         return subprocess.run(cmd, cwd=self._root, capture_output=True, text=True)
 
+    def _ensure_clean_worktree(self):
+        r = self._run_git("status", "--short", "--untracked-files=all")
+        if r.returncode != 0:
+            print("  ERROR: git status 확인 실패.")
+            print(f"  {r.stderr.strip()}")
+            sys.exit(1)
+
+        status = r.stdout.strip()
+        if not status:
+            return
+
+        print("  ERROR: 작업트리에 커밋되지 않은 변경사항이 있습니다.")
+        print("  Harness는 unrelated 변경 커밋 방지를 위해 clean worktree에서만 실행합니다.")
+        print("  변경사항을 commit 또는 stash한 뒤 다시 실행하세요.")
+        print("\n  현재 변경사항:")
+        for line in status.splitlines():
+            print(f"    {line}")
+        sys.exit(1)
+
+    def _stage_existing_paths(self, *paths: str):
+        existing = [path for path in paths if (Path(self._root) / path).exists()]
+        if existing:
+            self._run_git("add", "-A", "--", *existing)
+
     def _checkout_branch(self):
-        branch = f"feat-{self._phase_name}"
+        branch = self._branch_name
 
         r = self._run_git("rev-parse", "--abbrev-ref", "HEAD")
         if r.returncode != 0:
@@ -126,7 +168,7 @@ class StepExecutor:
         if r.stdout.strip() == branch:
             return
 
-        r = self._run_git("rev-parse", "--verify", branch)
+        r = self._run_git("rev-parse", "--verify", f"refs/heads/{branch}")
         r = self._run_git("checkout", branch) if r.returncode == 0 else self._run_git("checkout", "-b", branch)
 
         if r.returncode != 0:
@@ -153,7 +195,7 @@ class StepExecutor:
             else:
                 print(f"  WARN: 코드 커밋 실패: {r.stderr.strip()}")
 
-        self._run_git("add", "-A")
+        self._stage_existing_paths(output_rel, index_rel)
         if self._run_git("diff", "--cached", "--quiet").returncode != 0:
             msg = self.CHORE_MSG.format(phase=self._phase_name, num=step_num)
             r = self._run_git("commit", "-m", msg)
@@ -183,6 +225,13 @@ class StepExecutor:
         agents_md = ROOT / "AGENTS.md"
         if agents_md.exists():
             sections.append(f"## 프로젝트 규칙 (AGENTS.md)\n\n{agents_md.read_text()}")
+        phase_dir = getattr(self, "_phase_dir", None)
+        phase_readme = phase_dir / "README.md" if phase_dir is not None else None
+        if phase_readme is not None and phase_readme.exists():
+            sections.append(
+                f"## 현재 Phase README ({getattr(self, '_phase_dir_name', phase_readme.parent.name)}/README.md)\n\n"
+                f"{phase_readme.read_text()}"
+            )
         docs_dir = ROOT / "docs"
         if docs_dir.is_dir():
             for doc in sorted(docs_dir.glob("*.md")):
@@ -411,21 +460,79 @@ class StepExecutor:
 
             self._execute_single_step(pending, guardrails, command_context)
 
+    def _execute_one_step(self, guardrails: str, command_context: str) -> bool:
+        step = self._select_single_step()
+        if step is None:
+            print("\n  No pending steps.")
+            return False
+
+        step_num = step["step"]
+        index = self._read_json(self._index_file)
+        for s in index["steps"]:
+            if s["step"] == step_num and "started_at" not in s:
+                s["started_at"] = self._stamp()
+                self._write_json(self._index_file, index)
+                break
+
+        self._execute_single_step(step, guardrails, command_context)
+        return True
+
+    def _select_single_step(self) -> Optional[dict]:
+        index = self._read_json(self._index_file)
+        steps = index["steps"]
+        pending = next((s for s in steps if s["status"] == "pending"), None)
+        if pending is None:
+            return None
+        if self._next_step_only:
+            return pending
+
+        target = next((s for s in steps if s["step"] == self._step_number), None)
+        if target is None:
+            print(f"  ERROR: Step {self._step_number} not found.")
+            sys.exit(1)
+        if target["step"] != pending["step"]:
+            print(
+                f"  ERROR: Step {self._step_number} cannot run before "
+                f"pending Step {pending['step']} ({pending['name']})."
+            )
+            sys.exit(1)
+        if target.get("status") != "pending":
+            print(f"  ERROR: Step {self._step_number} is not pending.")
+            sys.exit(1)
+        return target
+
+    def _has_pending_steps(self) -> bool:
+        index = self._read_json(self._index_file)
+        return any(s.get("status") == "pending" for s in index["steps"])
+
+    def _push_current_branch(self):
+        if not self._auto_push:
+            return
+        branch = self._branch_name
+        r = self._run_git("push", "-u", "origin", branch)
+        if r.returncode != 0:
+            print(f"\n  ERROR: git push 실패: {r.stderr.strip()}")
+            sys.exit(1)
+        print(f"  ✓ Pushed to origin/{branch}")
+
     def _finalize(self):
         index = self._read_json(self._index_file)
         index["completed_at"] = self._stamp()
         self._write_json(self._index_file, index)
         self._update_top_index("completed")
 
-        self._run_git("add", "-A")
+        self._stage_existing_paths(
+            f"phases/{self._phase_dir_name}/index.json",
+            "phases/index.json",
+        )
         if self._run_git("diff", "--cached", "--quiet").returncode != 0:
-            msg = f"chore({self._phase_name}): mark phase completed"
+            msg = self.COMPLETION_MSG.format(phase=self._phase_name)
             r = self._run_git("commit", "-m", msg)
             if r.returncode == 0:
                 print(f"  ✓ {msg}")
 
         if self._auto_push:
-            branch = f"feat-{self._phase_name}"
+            branch = self._branch_name
             r = self._run_git("push", "-u", "origin", branch)
             if r.returncode != 0:
                 print(f"\n  ERROR: git push 실패: {r.stderr.strip()}")
@@ -441,10 +548,23 @@ def main():
     parser = argparse.ArgumentParser(description="Harness Step Executor")
     parser.add_argument("phase_dir", help="Phase directory name (e.g. 0-mvp)")
     parser.add_argument("--push", action="store_true", help="Push branch after completion")
+    parser.add_argument("--branch", help="Branch name to use instead of codex/<phase>")
     parser.add_argument("--unsafe", action="store_true", help="Run codex exec with sandbox and approval bypass")
+    parser.add_argument("--step", type=int, help="Run only this pending step number")
+    parser.add_argument("--next-step-only", action="store_true", help="Run only the next pending step")
     args = parser.parse_args()
 
-    StepExecutor(args.phase_dir, auto_push=args.push, unsafe=args.unsafe).run()
+    if args.step is not None and args.next_step_only:
+        parser.error("--step and --next-step-only cannot be used together")
+
+    StepExecutor(
+        args.phase_dir,
+        auto_push=args.push,
+        unsafe=args.unsafe,
+        branch_name=args.branch,
+        step_number=args.step,
+        next_step_only=args.next_step_only,
+    ).run()
 
 
 if __name__ == "__main__":

@@ -51,6 +51,29 @@ def test_profile_commands_take_precedence(tmp_path):
     assert [command.command for command in selected] == ["custom test"]
 
 
+def test_collect_checks_falls_back_per_missing_command(tmp_path):
+    codex = tmp_path / ".codex"
+    codex.mkdir()
+    (codex / "project-profile.json").write_text(
+        json.dumps({"commands": {"test": ["custom test"]}})
+    )
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "COMMANDS.md").write_text(
+        """
+## 활성 명령
+| 이름 | 명령 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| test | `docs test` | yes | tests |
+| build | `docs build` | yes | build |
+""".strip()
+    )
+
+    selected = checks.collect_checks(tmp_path)
+
+    assert [command.command for command in selected] == ["custom test", "docs build"]
+
+
 def test_detect_node_uses_lockfile_package_manager(tmp_path):
     (tmp_path / "package.json").write_text(json.dumps({"scripts": {"test": "vitest", "build": "vite build"}}))
     (tmp_path / "pnpm-lock.yaml").write_text("")
@@ -84,3 +107,22 @@ def test_placeholder_commands_are_ignored():
     assert not checks.is_real_command("<docs/COMMANDS.md의 test 명령>")
     assert not checks.is_real_command("")
     assert checks.is_real_command("python -m pytest")
+
+
+def test_run_checks_fails_when_required_commands_are_missing(capsys):
+    status = checks.run_checks([], Path.cwd())
+
+    captured = capsys.readouterr()
+    assert status == 1
+    assert "Missing required check commands: test, build" in captured.err
+
+
+def test_run_checks_executes_when_required_commands_exist(tmp_path):
+    commands = [
+        checks.CheckCommand("test", "python3 -c 'print(\"test ok\")'", "test"),
+        checks.CheckCommand("build", "python3 -c 'print(\"build ok\")'", "test"),
+    ]
+
+    status = checks.run_checks(commands, tmp_path)
+
+    assert status == 0
