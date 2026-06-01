@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/bash \"$(git rev-parse --show-toplevel)/.codex/hooks/tdd-guard.sh\" tdd-pre-tool-use",
+            "command": "python .codex/hooks/tdd-guard.py tdd-pre-tool-use",
             "timeout": 10,
             "statusMessage": "Checking TDD guard"
           }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/bash \"$(git rev-parse --show-toplevel)/.codex/hooks/tdd-guard.sh\" pre-tool-use",
+            "command": "python .codex/hooks/tdd-guard.py pre-tool-use",
             "timeout": 10,
             "statusMessage": "Checking command policy"
           }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/bash \"$(git rev-parse --show-toplevel)/.codex/hooks/tdd-guard.sh\" permission-request",
+            "command": "python .codex/hooks/tdd-guard.py permission-request",
             "timeout": 10,
             "statusMessage": "Checking approval policy"
           }
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/bash \"$(git rev-parse --show-toplevel)/.codex/hooks/tdd-guard.sh\" stop",
+            "command": "python .codex/hooks/tdd-guard.py stop",
             "timeout": 120,
             "statusMessage": "Running project checks"
           }

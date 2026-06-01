@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 set -u
 
-repo_root="$(git rev-parse --show-toplevel)"
-exec /bin/bash "$repo_root/.codex/hooks/tdd-guard.sh" git-pre-commit
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+exec sh "$repo_root/.codex/hooks/tdd-guard.sh" git-pre-commit
