@@ -313,6 +313,22 @@ def test_codex_review_uses_read_only_review_subcommand(runner):
     assert seen["cmd"][:6] == ["codex", "exec", "review", "--base", "origin/main", "--json"]
 
 
+def test_run_step_uses_current_python_executable(runner):
+    seen = {}
+    step = {"step": 0, "name": "project-scaffold"}
+
+    def fake_run(cmd, check=True, timeout=None):
+        seen["cmd"] = cmd
+        seen["timeout"] = timeout
+        return cp()
+
+    runner._run = fake_run
+    runner._run_step("codex/test", step)
+
+    assert seen["cmd"][:2] == [sys.executable, "scripts/execute.py"]
+    assert seen["timeout"] == 1800
+
+
 def test_codex_review_fails_if_worktree_changes(runner):
     statuses = iter([cp(stdout=""), cp(stdout=" M src/app.py\n")])
     runner._git = lambda *args, check=True: next(statuses)
@@ -331,7 +347,7 @@ def test_review_gate_passes_current_step_to_codex_review(runner):
     seen = {}
 
     def fake_run(cmd, check=True, timeout=None):
-        if cmd == ["python3", "scripts/checks.py", "--stage", "manual"]:
+        if cmd == [sys.executable, "scripts/checks.py", "--stage", "manual"]:
             return cp()
         if cmd == ["git", "diff", "--check", "origin/main...HEAD"]:
             return cp()
@@ -356,7 +372,7 @@ def test_review_markdown_is_table_and_dedupes_findings():
         ["a.py:1 - 실패", "a.py:1 - 실패"],
         "블로커가 있어 merge하지 않습니다.",
         diff_passed=False,
-        commands=("python3 scripts/checks.py --stage manual",),
+        commands=("python scripts/checks.py --stage manual",),
     )
 
     markdown = review.to_markdown()

@@ -88,10 +88,33 @@ def test_detect_spring_prefers_gradle(tmp_path):
     (tmp_path / "gradlew").write_text("")
     (tmp_path / "pom.xml").write_text("<project />")
 
-    selected = checks.detect_commands(tmp_path)
+    with patch.object(checks.sys, "platform", "linux"):
+        selected = checks.detect_commands(tmp_path)
 
     assert selected["test"][0].command == "./gradlew test"
     assert selected["build"][0].command == "./gradlew build"
+
+
+def test_detect_spring_uses_windows_gradle_wrapper(tmp_path):
+    (tmp_path / "gradlew.bat").write_text("")
+    (tmp_path / "build.gradle").write_text("")
+
+    with patch.object(checks.sys, "platform", "win32"):
+        selected = checks.detect_commands(tmp_path)
+
+    assert selected["test"][0].command == ".\\gradlew.bat test"
+    assert selected["build"][0].command == ".\\gradlew.bat build"
+
+
+def test_detect_spring_uses_windows_maven_wrapper(tmp_path):
+    (tmp_path / "mvnw.cmd").write_text("")
+    (tmp_path / "pom.xml").write_text("<project />")
+
+    with patch.object(checks.sys, "platform", "win32"):
+        selected = checks.detect_commands(tmp_path)
+
+    assert selected["test"][0].command == ".\\mvnw.cmd test"
+    assert selected["build"][0].command == ".\\mvnw.cmd package"
 
 
 def test_detect_python_uses_uv_when_available(tmp_path):

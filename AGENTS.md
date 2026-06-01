@@ -56,6 +56,6 @@
 - 린트: `<docs/COMMANDS.md의 lint 명령>`
 - 테스트: `<docs/COMMANDS.md의 test 명령>`
 - 빌드: `<docs/COMMANDS.md의 build 명령>`
-- 수동 검증: `python3 scripts/checks.py --stage manual`
-- Step PR 루프: `python3 scripts/autopilot.py <phase-name> --base main --max-review-fixes 2`
-- 환경 점검: `python3 scripts/doctor.py`
+- 수동 검증: `python scripts/checks.py --stage manual`
+- Step PR 루프: `python scripts/autopilot.py <phase-name> --base main --max-review-fixes 2`
+- 환경 점검: `python scripts/doctor.py --instance`

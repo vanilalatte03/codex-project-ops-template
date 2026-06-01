@@ -144,18 +144,36 @@ def _detect_node(root: Path, result: dict[str, list[CheckCommand]]):
 def _detect_spring(root: Path, result: dict[str, list[CheckCommand]]):
     has_gradle = any(
         (root / name).exists()
-        for name in ("gradlew", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")
+        for name in (
+            "gradlew",
+            "gradlew.bat",
+            "build.gradle",
+            "build.gradle.kts",
+            "settings.gradle",
+            "settings.gradle.kts",
+        )
     )
-    has_maven = any((root / name).exists() for name in ("mvnw", "pom.xml"))
+    has_maven = any((root / name).exists() for name in ("mvnw", "mvnw.cmd", "mvnw.bat", "pom.xml"))
 
     if has_gradle:
-        gradle = "./gradlew" if (root / "gradlew").exists() else "gradle"
+        if sys.platform.startswith("win"):
+            gradle = ".\\gradlew.bat" if (root / "gradlew.bat").exists() else "gradle"
+        else:
+            gradle = "./gradlew" if (root / "gradlew").exists() else "gradle"
         _append(result, "test", f"{gradle} test", "detected:spring-gradle")
         _append(result, "build", f"{gradle} build", "detected:spring-gradle")
         return
 
     if has_maven:
-        maven = "./mvnw" if (root / "mvnw").exists() else "mvn"
+        if sys.platform.startswith("win"):
+            if (root / "mvnw.cmd").exists():
+                maven = ".\\mvnw.cmd"
+            elif (root / "mvnw.bat").exists():
+                maven = ".\\mvnw.bat"
+            else:
+                maven = "mvn"
+        else:
+            maven = "./mvnw" if (root / "mvnw").exists() else "mvn"
         _append(result, "test", f"{maven} test", "detected:spring-maven")
         _append(result, "build", f"{maven} package", "detected:spring-maven")
 

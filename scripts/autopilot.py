@@ -303,7 +303,7 @@ class AutopilotRunner:
 
     def _review_commands(self) -> tuple[str, ...]:
         return (
-            "python3 scripts/checks.py --stage manual",
+            "python scripts/checks.py --stage manual",
             f"git diff --check origin/{self.base}...HEAD",
         )
 
@@ -324,7 +324,7 @@ class AutopilotRunner:
         findings: list[str] = []
         commands = self._review_commands()
 
-        checks_cmd = ["python3", "scripts/checks.py", "--stage", "manual"]
+        checks_cmd = [sys.executable, "scripts/checks.py", "--stage", "manual"]
         checks_result = self._run(checks_cmd, check=False)
         checks_passed = checks_result.returncode == 0
         if not checks_passed:
