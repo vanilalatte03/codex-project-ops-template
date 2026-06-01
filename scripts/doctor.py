@@ -18,14 +18,24 @@ REQUIRED_FILES = [
     "docs/ARCHITECTURE.md",
     "docs/ADR.md",
     "docs/COMMANDS.md",
+    ".codex/config.toml",
     ".codex/hooks.json",
     ".codex/project-profile.json",
+    ".codex/hooks/tdd-guard.py",
     ".codex/hooks/tdd-guard.sh",
+    ".gitattributes",
     ".githooks/pre-commit",
     "phases/README.md",
     "phases/index.json",
     "issues/README.md",
+    "scripts/execute.py",
     "scripts/autopilot.py",
+    "scripts/checks.py",
+    "scripts/doctor.py",
+    "scripts/guard.py",
+]
+TEMPLATE_REQUIRED_FILES = [
+    ".github/workflows/template-ci.yml",
 ]
 PLACEHOLDER_FILES = [
     "AGENTS.md",
@@ -34,6 +44,7 @@ PLACEHOLDER_FILES = [
 ]
 PLACEHOLDER_PATTERN = re.compile(r"<[^>\n]+>|TODO|TBD")
 MODES = ("template", "instance")
+LEGACY_HOOK_MARKERS = ("/bin/bash", "/usr/bin/python3", "$(git rev-parse")
 
 
 def _status(ok: bool) -> str:
@@ -93,6 +104,43 @@ def _is_placeholder(value: str) -> bool:
     return bool(PLACEHOLDER_PATTERN.search(value))
 
 
+def _read_text(root: Path, rel: str) -> str:
+    path = root / rel
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _template_contract_issues(root: Path) -> list[str]:
+    issues: list[str] = []
+
+    for rel in TEMPLATE_REQUIRED_FILES:
+        if not (root / rel).exists():
+            issues.append(f"{rel} is missing.")
+
+    hooks_json = _read_text(root, ".codex/hooks.json")
+    if "tdd-guard.py" not in hooks_json:
+        issues.append(".codex/hooks.json must call the cross-platform tdd-guard.py launcher.")
+    if any(marker in hooks_json for marker in LEGACY_HOOK_MARKERS):
+        issues.append(".codex/hooks.json still contains legacy POSIX shell hook commands.")
+
+    for rel in (".codex/hooks/tdd-guard.sh", ".githooks/pre-commit"):
+        text = _read_text(root, rel)
+        if text and any(marker in text for marker in ("/bin/bash", "/usr/bin/python3")):
+            issues.append(f"{rel} still contains absolute POSIX shell or Python paths.")
+
+    gitattributes = _read_text(root, ".gitattributes")
+    required_attrs = (
+        "*.sh text eol=lf",
+        ".githooks/* text eol=lf",
+        ".codex/hooks/*.sh text eol=lf",
+    )
+    for attr in required_attrs:
+        if attr not in gitattributes:
+            issues.append(f".gitattributes must include `{attr}`.")
+    return issues
+
+
 def collect_issues(root: Path = ROOT, mode: str = "instance") -> list[str]:
     if mode not in MODES:
         raise ValueError(f"Unknown doctor mode: {mode}")
@@ -109,6 +157,9 @@ def collect_issues(root: Path = ROOT, mode: str = "instance") -> list[str]:
                 issues.append(f"{rel} still contains template placeholders.")
 
     issues.extend(_profile_issues(root, mode))
+
+    if mode == "template":
+        issues.extend(_template_contract_issues(root))
 
     if mode == "instance":
         selected = checks.collect_checks(root, "manual")

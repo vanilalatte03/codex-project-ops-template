@@ -3,7 +3,7 @@
 Harness Step Executor — phase 내 step을 순차 실행하고 자가 교정한다.
 
 Usage:
-    python3 scripts/execute.py <phase-dir> [--push] [--branch <branch-name>]
+    python scripts/execute.py <phase-dir> [--push] [--branch <branch-name>]
 """
 
 import argparse
