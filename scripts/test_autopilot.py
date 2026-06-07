@@ -129,6 +129,20 @@ def test_step_success_creates_draft_pr_comments_and_merges(runner, tmp_repo):
     assert ("pr", "merge", "https://github.com/org/repo/pull/2", "--squash", "--delete-branch") in gh_calls
 
 
+def test_pr_body_uses_step_specific_change_reason(runner, tmp_repo):
+    _mark_step_complete(tmp_repo, 1, "API 계약 타입을 추가함")
+    runner._changed_files = lambda: ["app/shared/src/contracts/agent.ts"]
+
+    body = runner._pr_body(
+        "codex/0-mvp-step1-api-layer",
+        {"step": 1, "name": "api-layer"},
+    )
+
+    assert "Harness 작업을 작은 step 단위로 리뷰하고 안전하게 병합하기 위해 분리했습니다." not in body
+    assert "이 PR은 \"API 레이어를 만든다\" 요구사항을 완료하기 위한 변경입니다." in body
+    assert "실제 변경 결과: API 계약 타입을 추가함." in body
+
+
 def test_review_fail_records_issue_and_leaves_pr_open(runner, tmp_repo):
     gh_calls = []
     runner.max_review_fixes = 0
@@ -295,14 +309,19 @@ def test_codex_review_prompt_excludes_issue_records_and_uses_step_contract(runne
     assert "Current Harness step is Step 1 `api-layer`" in prompt
     assert "Missing functionality assigned to future steps is not a blocker" in prompt
     assert "Implementing future-step scope inside the current step is a blocker" in prompt
+    assert str(Path(sys.executable)) in prompt
+    assert "instead of assuming `python` or `py` is available on PATH" in prompt
 
 
-def test_codex_review_uses_read_only_review_subcommand(runner):
+def test_codex_review_uses_step_scoped_exec_prompt(runner):
     seen = {}
     runner._git = lambda *args, check=True: cp(stdout="")
 
-    def fake_run(cmd, check=True, timeout=None):
+    def fake_run(cmd, check=True, timeout=None, input_text=None):
         seen["cmd"] = cmd
+        seen["input_text"] = input_text
+        schema_path = Path(cmd[cmd.index("--output-schema") + 1])
+        seen["schema"] = json.loads(schema_path.read_text(encoding="utf-8"))
         return cp(stdout='{"pass": true, "summary": "ok", "findings": []}')
 
     runner._run = fake_run
@@ -310,7 +329,57 @@ def test_codex_review_uses_read_only_review_subcommand(runner):
     review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
 
     assert review.passed is True
-    assert seen["cmd"][:6] == ["codex", "exec", "review", "--base", "origin/main", "--json"]
+    assert seen["cmd"][:2] == [ap.CODEX_BIN, "exec"]
+    assert "review" not in seen["cmd"][2:]
+    assert "--base" not in seen["cmd"]
+    assert ap.CODEX_ENV_CONFIG in seen["cmd"]
+    assert "--output-schema" in seen["cmd"]
+    assert seen["schema"]["required"] == ["pass", "summary", "findings"]
+    assert "--output-last-message" in seen["cmd"]
+    assert "--json" in seen["cmd"]
+    assert seen["cmd"][-1] == "-"
+    assert seen["input_text"].startswith("Read-only review only.")
+    assert "Current Harness step is Step 0 `project-scaffold`" in seen["input_text"]
+
+
+def test_codex_review_parses_output_last_message(runner):
+    runner._git = lambda *args, check=True: cp(stdout="")
+
+    def fake_run(cmd, check=True, timeout=None, input_text=None):
+        last_message_path = Path(cmd[cmd.index("--output-last-message") + 1])
+        last_message_path.write_text('{"pass": true, "summary": "ok", "findings": []}', encoding="utf-8")
+        return cp(stdout='{"type":"started"}')
+
+    runner._run = fake_run
+
+    review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+
+    assert review.passed is True
+    assert review.summary == "ok"
+
+
+def test_codex_review_parses_native_priority_findings(runner):
+    runner._git = lambda *args, check=True: cp(stdout="")
+
+    def fake_run(cmd, check=True, timeout=None, input_text=None):
+        last_message_path = Path(cmd[cmd.index("--output-last-message") + 1])
+        last_message_path.write_text(
+            "Review comment:\n\n"
+            "- [P2] Pass step-scoped review instructions to Codex - scripts/autopilot.py:410\n"
+            "  The review lacks the step contract.",
+            encoding="utf-8",
+        )
+        return cp(stdout='{"type":"turn.completed"}')
+
+    runner._run = fake_run
+
+    review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+
+    assert review.passed is False
+    assert review.codex_passed is False
+    assert review.findings == [
+        "- [P2] Pass step-scoped review instructions to Codex - scripts/autopilot.py:410"
+    ]
 
 
 def test_run_step_uses_current_python_executable(runner):
@@ -326,13 +395,58 @@ def test_run_step_uses_current_python_executable(runner):
     runner._run_step("codex/test", step)
 
     assert seen["cmd"][:2] == [sys.executable, "scripts/execute.py"]
+    assert "--reasoning-effort" in seen["cmd"]
+    assert seen["cmd"][seen["cmd"].index("--reasoning-effort") + 1] == "medium"
+    assert seen["timeout"] == 1800
+
+
+def test_codex_review_uses_xhigh_reasoning_effort(runner):
+    seen = {}
+    runner._git = lambda *args, check=True: cp(stdout="")
+
+    def fake_run(cmd, check=True, timeout=None, input_text=None):
+        seen["cmd"] = cmd
+        return cp(stdout='{"pass": true, "summary": "ok", "findings": []}')
+
+    runner._run = fake_run
+
+    review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+
+    assert review.passed is True
+    assert "-c" in seen["cmd"]
+    assert 'model_reasoning_effort="xhigh"' in seen["cmd"]
+    assert ap.CODEX_ENV_CONFIG in seen["cmd"]
+
+
+def test_codex_fix_uses_medium_reasoning_effort(runner, tmp_repo):
+    seen = {}
+    issue = ap.IssueRecord(1, "title", "body", tmp_repo / "issues" / "issue-1.md", "")
+
+    def fake_run(cmd, check=True, timeout=None, input_text=None):
+        seen["cmd"] = cmd
+        seen["input_text"] = input_text
+        seen["timeout"] = timeout
+        return cp()
+
+    runner._run = fake_run
+    runner._invoke_codex_fix(
+        issue,
+        "codex/test",
+        {"step": 0, "name": "project-scaffold"},
+        ap.ReviewResult(False, ["finding"], "failed"),
+        1,
+    )
+
+    assert seen["cmd"][:4] == [ap.CODEX_BIN, "exec", "-c", 'model_reasoning_effort="medium"']
+    assert ap.CODEX_ENV_CONFIG in seen["cmd"]
+    assert seen["input_text"].startswith("당신은 Harness step PR 자동 리뷰 수정 담당자입니다.")
     assert seen["timeout"] == 1800
 
 
 def test_codex_review_fails_if_worktree_changes(runner):
     statuses = iter([cp(stdout=""), cp(stdout=" M src/app.py\n")])
     runner._git = lambda *args, check=True: next(statuses)
-    runner._run = lambda cmd, check=True, timeout=None: cp(
+    runner._run = lambda cmd, check=True, timeout=None, input_text=None: cp(
         stdout='{"pass": true, "summary": "ok", "findings": []}'
     )
 

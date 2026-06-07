@@ -6,12 +6,39 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+IMPLEMENTATION_REASONING_EFFORT = "medium"
+REVIEW_REASONING_EFFORT = "xhigh"
+REVIEW_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "pass": {"type": "boolean"},
+        "summary": {"type": "string"},
+        "findings": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["pass", "summary", "findings"],
+    "additionalProperties": False,
+}
+
+
+def _resolve_codex_bin() -> str:
+    candidates = ("codex.cmd", "codex.exe", "codex") if sys.platform == "win32" else ("codex",)
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return candidates[0]
+
+
+CODEX_BIN = _resolve_codex_bin()
+CODEX_ENV_CONFIG = "shell_environment_policy.inherit=all"
 
 
 class AutopilotError(RuntimeError):
@@ -109,6 +136,7 @@ class AutopilotRunner:
         *,
         check: bool = True,
         timeout: int | None = None,
+        input_text: str | None = None,
     ) -> subprocess.CompletedProcess:
         result = subprocess.run(
             cmd,
@@ -116,6 +144,7 @@ class AutopilotRunner:
             capture_output=True,
             text=True,
             timeout=timeout,
+            input=input_text,
         )
         if check and result.returncode != 0:
             raise AutopilotError(self._command_failure(cmd, result))
@@ -223,6 +252,8 @@ class AutopilotRunner:
             "--push",
             "--step",
             str(step["step"]),
+            "--reasoning-effort",
+            IMPLEMENTATION_REASONING_EFFORT,
         ]
         if self.unsafe:
             cmd.append("--unsafe")
@@ -263,7 +294,7 @@ class AutopilotRunner:
             f"- `{self.phase}` Step {step['step']} `{step['name']}` 범위를 구현했습니다.\n"
             f"- 산출물: {summary}\n\n"
             "## 변경 이유\n"
-            "- Harness 작업을 작은 step 단위로 리뷰하고 안전하게 병합하기 위해 분리했습니다.\n\n"
+            f"{self._pr_change_reason(summary, task)}\n\n"
             "## 주요 변경 사항\n"
             f"- Step 작업: {task}\n"
             f"{changed_section}\n\n"
@@ -273,7 +304,20 @@ class AutopilotRunner:
             "## 참고 사항\n"
             f"- 브랜치: `{branch}`\n"
             "- Draft PR로 생성하며 자체 리뷰 gate 통과 시 ready 전환 후 squash merge합니다.\n"
+            f"- Codex 지능은 구현 `{IMPLEMENTATION_REASONING_EFFORT}`, 리뷰 `{REVIEW_REASONING_EFFORT}`로 실행합니다.\n"
         )
+
+    def _pr_change_reason(self, summary: str, task: str) -> str:
+        task_text = self._sentence_fragment(task) or "현재 step"
+        summary_text = self._sentence_fragment(summary) or "step 실행 결과를 반영함"
+        return (
+            f"- 이 PR은 \"{task_text}\" 요구사항을 완료하기 위한 변경입니다.\n"
+            f"- 실제 변경 결과: {summary_text}."
+        )
+
+    @staticmethod
+    def _sentence_fragment(text: str) -> str:
+        return text.strip().rstrip(".")
 
     def _step_from_index(self, step_num: int) -> dict | None:
         index = self._load_phase_index()
@@ -365,11 +409,36 @@ class AutopilotRunner:
     def _run_codex_review(self, step: dict) -> ReviewResult:
         prompt = self._codex_review_prompt(step)
         before_status = self._worktree_status()
-        result = self._run(
-            ["codex", "exec", "review", "--base", f"origin/{self.base}", "--json", prompt],
-            check=False,
-            timeout=1800,
-        )
+        schema_path = self._write_review_output_schema()
+        last_message_path = self._temporary_path(".txt")
+        try:
+            result = self._run(
+                [
+                    CODEX_BIN,
+                    "exec",
+                    "-c",
+                    f'model_reasoning_effort="{REVIEW_REASONING_EFFORT}"',
+                    "-c",
+                    CODEX_ENV_CONFIG,
+                    "--output-schema",
+                    str(schema_path),
+                    "--output-last-message",
+                    str(last_message_path),
+                    "--json",
+                    "-",
+                ],
+                check=False,
+                timeout=1800,
+                input_text=prompt,
+            )
+            last_message = (
+                last_message_path.read_text(encoding="utf-8")
+                if last_message_path.exists()
+                else ""
+            )
+        finally:
+            schema_path.unlink(missing_ok=True)
+            last_message_path.unlink(missing_ok=True)
         after_status = self._worktree_status()
         if after_status != before_status:
             return ReviewResult(
@@ -384,11 +453,27 @@ class AutopilotRunner:
         if result.returncode != 0:
             return ReviewResult(
                 False,
-                [self._command_failure(["codex", "exec", "review", "--json", "<review-prompt>"], result)],
+                [
+                    self._command_failure(
+                        [
+                            "codex",
+                            "exec",
+                            "-c",
+                            f'model_reasoning_effort="{REVIEW_REASONING_EFFORT}"',
+                            "-c",
+                            CODEX_ENV_CONFIG,
+                            "--json",
+                            "<review-prompt>",
+                        ],
+                        result,
+                    )
+                ],
                 "자체 리뷰 실행 실패",
                 codex_passed=False,
             )
-        parsed = self._parse_review_result(result.stdout)
+        parsed = self._parse_review_result(result.stdout) or self._parse_review_result(last_message)
+        if parsed is None:
+            parsed = self._parse_native_review_text(last_message)
         if parsed is None:
             return ReviewResult(
                 False,
@@ -397,6 +482,15 @@ class AutopilotRunner:
                 codex_passed=False,
             )
         return parsed
+
+    def _write_review_output_schema(self) -> Path:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as file:
+            json.dump(REVIEW_OUTPUT_SCHEMA, file)
+            return Path(file.name)
+
+    def _temporary_path(self, suffix: str) -> Path:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as file:
+            return Path(file.name)
 
     def _worktree_status(self) -> str:
         result = self._git("status", "--short", "--untracked-files=all", check=False)
@@ -409,6 +503,7 @@ class AutopilotRunner:
         step_name = step.get("name", "unknown")
         phase_readme = f"phases/{self.phase}/README.md"
         step_file = f"phases/{self.phase}/step{step_num}.md"
+        python_bin = str(Path(sys.executable))
         return (
             "Read-only review only. Do not modify files. "
             f"Review the current branch diff against origin/{self.base} for Harness project rules. "
@@ -420,6 +515,8 @@ class AutopilotRunner:
             "Missing functionality assigned to future steps is not a blocker. "
             "Implementing future-step scope inside the current step is a blocker. "
             "Focus on blockers: bugs, missing tests, MVP scope violations, API or CLI contract violations, build/test risk. "
+            f"The runner already executed local checks before this review. If you rerun Python checks on Windows, use `{python_bin}` "
+            "instead of assuming `python` or `py` is available on PATH. "
             "Return only JSON with keys: pass (boolean), summary (string), findings (array of strings)."
         )
 
@@ -485,6 +582,31 @@ class AutopilotRunner:
                 nested = self._try_parse_review_payload(value)
                 if nested is not None:
                     return nested
+        return None
+
+    def _parse_native_review_text(self, text: str) -> ReviewResult | None:
+        stripped = text.strip()
+        if not stripped:
+            return None
+
+        findings = [
+            line.strip()
+            for line in stripped.splitlines()
+            if re.match(r"^[-*]\s+\[P[0-3]\]", line.strip())
+        ]
+        if findings:
+            return ReviewResult(False, findings, "자체 리뷰에서 발견사항을 보고했습니다.", codex_passed=False)
+
+        lowered = stripped.lower()
+        pass_markers = (
+            "no issues found",
+            "no findings",
+            "블로커 없음",
+            "발견사항 없음",
+            "문제 없음",
+        )
+        if any(marker in lowered for marker in pass_markers):
+            return ReviewResult(True, [], stripped, codex_passed=True)
         return None
 
     # --- issue recording ---
@@ -560,7 +682,20 @@ class AutopilotRunner:
             f"{review.to_markdown()}\n\n"
             "수정 후 가능한 검증을 실행하고, 수정한 파일은 working tree에 남겨두세요."
         )
-        self._run(["codex", "exec", "--json", prompt], timeout=1800)
+        self._run(
+            [
+                CODEX_BIN,
+                "exec",
+                "-c",
+                f'model_reasoning_effort="{IMPLEMENTATION_REASONING_EFFORT}"',
+                "-c",
+                CODEX_ENV_CONFIG,
+                "--json",
+                "-",
+            ],
+            timeout=1800,
+            input_text=prompt,
+        )
 
     def _commit_dirty_fix(self, step: dict):
         status = self._git("status", "--short", "--untracked-files=all").stdout.strip()

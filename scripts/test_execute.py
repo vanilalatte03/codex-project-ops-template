@@ -555,12 +555,28 @@ class TestInvokeCodex:
             output = executor._invoke_codex(step, preamble)
 
         cmd = mock_run.call_args[0][0]
-        assert cmd[0] == "codex"
+        assert cmd[0] == ex.CODEX_BIN
         assert cmd[1] == "exec"
         assert "--json" in cmd
+        assert ex.CODEX_ENV_CONFIG in cmd
+        assert "model_reasoning_effort" not in " ".join(cmd)
         assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
-        assert "PREAMBLE" in cmd[-1]
-        assert "UI를 구현하세요" in cmd[-1]
+        assert cmd[-1] == "-"
+        assert "PREAMBLE" in mock_run.call_args.kwargs["input"]
+        assert "UI를 구현하세요" in mock_run.call_args.kwargs["input"]
+
+    def test_reasoning_effort_adds_codex_config(self, executor):
+        executor._reasoning_effort = "medium"
+        mock_result = MagicMock(returncode=0, stdout="{}", stderr="")
+        step = {"step": 2, "name": "ui"}
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            executor._invoke_codex(step, "preamble")
+
+        cmd = mock_run.call_args[0][0]
+        assert cmd[:4] == [ex.CODEX_BIN, "exec", "-c", 'model_reasoning_effort="medium"']
+        assert ex.CODEX_ENV_CONFIG in cmd
+        assert "--json" in cmd
 
     def test_unsafe_adds_bypass_flag(self, executor):
         executor._unsafe = True
@@ -675,8 +691,26 @@ class TestMainCli:
             "branch_name": "codex/test",
             "step_number": 2,
             "next_step_only": False,
+            "reasoning_effort": None,
             "ran": True,
         }
+
+    def test_cli_passes_reasoning_effort(self):
+        captured = {}
+
+        class DummyExecutor:
+            def __init__(self, phase_dir, **kwargs):
+                captured["phase_dir"] = phase_dir
+                captured.update(kwargs)
+
+            def run(self):
+                captured["ran"] = True
+
+        with patch("sys.argv", ["execute.py", "0-mvp", "--reasoning-effort", "medium"]):
+            with patch.object(ex, "StepExecutor", DummyExecutor):
+                ex.main()
+
+        assert captured["reasoning_effort"] == "medium"
 
 
 # ---------------------------------------------------------------------------
