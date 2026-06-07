@@ -9,6 +9,7 @@ Usage:
 import argparse
 import contextlib
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -21,6 +22,19 @@ from typing import Optional
 import checks
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _resolve_codex_bin() -> str:
+    candidates = ("codex.cmd", "codex.exe", "codex") if sys.platform == "win32" else ("codex",)
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return candidates[0]
+
+
+CODEX_BIN = _resolve_codex_bin()
+CODEX_ENV_CONFIG = "shell_environment_policy.inherit=all"
 
 
 @contextlib.contextmanager
@@ -63,7 +77,8 @@ class StepExecutor:
     def __init__(self, phase_dir_name: str, *, auto_push: bool = False,
                  unsafe: bool = False, branch_name: Optional[str] = None,
                  step_number: Optional[int] = None,
-                 next_step_only: bool = False):
+                 next_step_only: bool = False,
+                 reasoning_effort: Optional[str] = None):
         self._root = str(ROOT)
         self._phases_dir = ROOT / "phases"
         self._phase_dir = self._phases_dir / phase_dir_name
@@ -74,6 +89,7 @@ class StepExecutor:
         self._branch_name = branch_name
         self._step_number = step_number
         self._next_step_only = next_step_only
+        self._reasoning_effort = reasoning_effort
 
         if not self._phase_dir.is_dir():
             print(f"ERROR: {self._phase_dir} not found")
@@ -224,22 +240,22 @@ class StepExecutor:
         sections = []
         agents_md = ROOT / "AGENTS.md"
         if agents_md.exists():
-            sections.append(f"## 프로젝트 규칙 (AGENTS.md)\n\n{agents_md.read_text()}")
+            sections.append(f"## 프로젝트 규칙 (AGENTS.md)\n\n{agents_md.read_text(encoding='utf-8')}")
         phase_dir = getattr(self, "_phase_dir", None)
         phase_readme = phase_dir / "README.md" if phase_dir is not None else None
         if phase_readme is not None and phase_readme.exists():
             sections.append(
                 f"## 현재 Phase README ({getattr(self, '_phase_dir_name', phase_readme.parent.name)}/README.md)\n\n"
-                f"{phase_readme.read_text()}"
+                f"{phase_readme.read_text(encoding='utf-8')}"
             )
         docs_dir = ROOT / "docs"
         if docs_dir.is_dir():
             for doc in sorted(docs_dir.glob("*.md")):
-                sections.append(f"## {doc.stem}\n\n{doc.read_text()}")
+                sections.append(f"## {doc.stem}\n\n{doc.read_text(encoding='utf-8')}")
             adr_dir = docs_dir / "adr"
             if adr_dir.is_dir():
                 for doc in sorted(adr_dir.glob("*.md")):
-                    sections.append(f"## adr/{doc.stem}\n\n{doc.read_text()}")
+                    sections.append(f"## adr/{doc.stem}\n\n{doc.read_text(encoding='utf-8')}")
         return "\n\n---\n\n".join(sections) if sections else ""
 
     def _load_command_context(self) -> str:
@@ -312,13 +328,17 @@ class StepExecutor:
             print(f"  ERROR: {step_file} not found")
             sys.exit(1)
 
-        prompt = preamble + step_file.read_text()
-        cmd = ["codex", "exec", "--json"]
+        prompt = preamble + step_file.read_text(encoding="utf-8")
+        cmd = [CODEX_BIN, "exec"]
+        if self._reasoning_effort:
+            cmd.extend(["-c", f'model_reasoning_effort="{self._reasoning_effort}"'])
+        cmd.extend(["-c", CODEX_ENV_CONFIG])
+        cmd.append("--json")
         if self._unsafe:
             cmd.append("--dangerously-bypass-approvals-and-sandbox")
-        cmd.append(prompt)
+        cmd.append("-")
         result = subprocess.run(
-            cmd,
+            cmd, input=prompt,
             cwd=self._root, capture_output=True, text=True, timeout=1800,
         )
 
@@ -333,7 +353,7 @@ class StepExecutor:
             "stdout": result.stdout, "stderr": result.stderr,
         }
         out_path = self._phase_dir / f"step{step_num}-output.json"
-        with open(out_path, "w") as f:
+        with open(out_path, "w", encoding="utf-8") as f:
             json.dump(output, f, indent=2, ensure_ascii=False)
 
         return output
@@ -552,6 +572,11 @@ def main():
     parser.add_argument("--unsafe", action="store_true", help="Run codex exec with sandbox and approval bypass")
     parser.add_argument("--step", type=int, help="Run only this pending step number")
     parser.add_argument("--next-step-only", action="store_true", help="Run only the next pending step")
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=("minimal", "low", "medium", "high", "xhigh"),
+        help="Override Codex model_reasoning_effort for step implementation",
+    )
     args = parser.parse_args()
 
     if args.step is not None and args.next_step_only:
@@ -564,6 +589,7 @@ def main():
         branch_name=args.branch,
         step_number=args.step,
         next_step_only=args.next_step_only,
+        reasoning_effort=args.reasoning_effort,
     ).run()
 
 
