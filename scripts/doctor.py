@@ -20,6 +20,9 @@ REQUIRED_FILES = [
     "docs/ADR.md",
     "docs/COMMANDS.md",
     "docs/SCOPE_CHANGE_CHECKLIST.md",
+    "guides/PROMPTS.md",
+    "guides/CONFIGURATION.md",
+    "guides/UPGRADE.md",
     ".codex/config.toml",
     ".codex/hooks.json",
     ".codex/project-profile.json",
@@ -132,7 +135,7 @@ def _profile_issues(root: Path, mode: str) -> list[str]:
         issues.append(
             f".codex/project-profile.json templateVersion '{version}' does not match harness "
             f"TEMPLATE_VERSION '{codex_common.TEMPLATE_VERSION}'. Finish the upgrade steps in the "
-            "template README, then update templateVersion."
+            "template guides/UPGRADE.md, then update templateVersion."
         )
     return issues
 

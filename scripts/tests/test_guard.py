@@ -1,9 +1,7 @@
 import json
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent))
 import guard
 
 
@@ -82,6 +80,14 @@ def test_python_source_matches_tests_layout(tmp_path):
     test_path.write_text("def test_ok(): pass")
 
     assert guard.has_matching_test("src/service.py", tmp_path)
+
+
+def test_python_script_source_matches_scripts_tests_layout(tmp_path):
+    test_path = tmp_path / "scripts" / "tests" / "test_autopilot.py"
+    test_path.parent.mkdir(parents=True)
+    test_path.write_text("def test_ok(): pass")
+
+    assert guard.has_matching_test("scripts/autopilot.py", tmp_path)
 
 
 def test_docs_and_phase_paths_are_skipped():
