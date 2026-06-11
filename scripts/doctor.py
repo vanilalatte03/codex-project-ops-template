@@ -31,6 +31,7 @@ REQUIRED_FILES = [
     "phases/README.md",
     "phases/index.json",
     "issues/README.md",
+    "archive/README.md",
     "scripts/execute.py",
     "scripts/autopilot.py",
     "scripts/checks.py",

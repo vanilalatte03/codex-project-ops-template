@@ -30,6 +30,7 @@
 - phase별 scope 확장/허용 규칙은 `phases/{phase}/scope-rules.json`에 둔다.
 - phase 작업은 `phases/{phase}/README.md`, `phases/{phase}/index.json`, `phases/{phase}/stepN.md`에 둔다.
 - phase 실패 기록은 `issues/{phase}/issue-N.md`에 둔다.
+- MVP 전환 시 직전 MVP 요약은 `archive/{직전-mvp}/`에 둔다. 형식은 `archive/README.md`를 따른다.
 
 ## 테스트와 검증
 - 구현 전 `docs/COMMANDS.md`에서 해당 프로젝트의 lint/test/build 명령을 확인한다.

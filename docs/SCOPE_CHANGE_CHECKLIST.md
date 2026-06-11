@@ -19,8 +19,10 @@
 
 ## 기본 원칙
 
-- 완료된 phase 문서(`phases/`, `issues/`)는 과거 실행 기록입니다. 현재 구현
-  기준은 루트 `README.md`와 `docs/` 아래 현재 문서입니다.
+- 완료된 phase 문서(`phases/`, `issues/`)와 `archive/`는 과거 실행 기록입니다.
+  현재 구현 기준은 루트 `README.md`와 `docs/` 아래 현재 문서입니다.
+- MVP를 전환할 때는 현재 baseline 문구를 바꾸기 전에 직전 MVP의 요약을
+  `archive/{직전-mvp}/`에 남깁니다. 형식은 `archive/README.md`를 따릅니다.
 - 오래된 ADR을 새 결정처럼 고치지 않습니다. 새 결정은 새 ADR 파일을 만들고
   `docs/ADR.md` 인덱스에 연결합니다.
 - 범위별 정규식 검증은 `scripts/checks.py`에 넣지 않습니다. 해당 phase의
