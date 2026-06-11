@@ -241,10 +241,14 @@ def check_names_for_stage(stage: str, root: Path = ROOT) -> tuple[str, ...]:
     if stage == "final":
         default = CHECK_NAMES
     elif stage == "stop":
+        # stop 훅은 에이전트가 멈출 때마다 실행되므로 기본은 lint만 돌린다.
+        # test/build까지 돌리려면 stageChecks로 명시적으로 확장한다.
         default = STOP_STAGE_CHECK_NAMES
     else:
         default = BASE_CHECK_NAMES
 
+    # Per-stage overrides keep heavy stages (e.g. stop hooks) configurable:
+    # .codex/project-profile.json -> {"stageChecks": {"stop": ["lint"]}}
     stage_checks = load_project_profile(root).get("stageChecks")
     if not isinstance(stage_checks, dict):
         return default
@@ -264,6 +268,8 @@ def collect_checks(root: Path = ROOT, stage: str = "manual") -> list[CheckComman
     merged: dict[str, list[CheckCommand]] = {}
     for provider in (commands_from_profile, commands_from_docs, detect_commands):
         for name, commands in provider(root).items():
+            # First provider that defines a check name wins for that name only,
+            # so a profile that pins `test` does not silence docs/detected `build`.
             merged.setdefault(name, commands)
     return _flatten(merged, names)
 
@@ -490,6 +496,7 @@ def run_checks(
         print(f"$ {check.command}  # {check.name}, {check.source}")
         sys.stdout.flush()
         try:
+            # Stream output directly so long builds show live progress.
             result = subprocess.run(check.command, cwd=root, shell=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             print(f"Command timed out after {timeout}s: {check.command}", file=sys.stderr)

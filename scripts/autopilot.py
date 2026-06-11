@@ -36,6 +36,8 @@ DEFAULT_FIX_EFFORT = "medium"
 DEFAULT_GIT_TIMEOUT = 600
 DEFAULT_GH_TIMEOUT = 600
 PR_CHECKS_TIMEOUT = 3600
+# ready 직후에는 CI가 체크 런을 아직 만들지 못해 "no checks reported"가
+# 일시적으로 나올 수 있다. grace 동안 재확인한 뒤에만 체크 없음으로 판단한다.
 NO_CHECKS_GRACE_SECONDS = 60
 NO_CHECKS_POLL_SECONDS = 15
 SCOPE_RULES_FILENAME = "scope-rules.json"
@@ -152,6 +154,8 @@ def _dedupe(items: list[str]) -> list[str]:
 class AutopilotRunner:
     """Coordinates a Harness phase as a sequence of small reviewed PRs."""
 
+    # 테스트 fixture가 금지 키워드 문자열을 포함하는 파일들. 스캐너 코드 자체는
+    # 키워드를 갖지 않으므로 (.codex/scope-rules.json으로 외부화) 제외하지 않는다.
     FORBIDDEN_SCAN_EXCLUDED_PATHS = (
         "scripts/test_autopilot.py",
         "scripts/test_checks.py",
@@ -594,6 +598,8 @@ class AutopilotRunner:
                     f"PR: {pr_url}\n"
                     f"{self._compact_output(output) or f'exit {result.returncode}'}"
                 )
+            # "no checks reported"는 CI가 없는 저장소뿐 아니라 ready 직후
+            # 체크 런 생성 전의 레이스에서도 나온다. grace 동안 재확인한다.
             if self.allow_no_checks:
                 return
             if time.monotonic() >= deadline:
@@ -622,6 +628,8 @@ class AutopilotRunner:
         checks_passed = True
         diff_passed = True
         for command in commands:
+            # step 문서는 codex가 수정할 수 있는 입력이므로,
+            # 인수 기준 명령도 실행 전에 위험 명령 정책을 통과해야 한다.
             danger = guard.danger_reason(command)
             if danger:
                 checks_passed = False
@@ -750,6 +758,7 @@ class AutopilotRunner:
         ]
 
     def _scope_rules(self) -> dict:
+        """phases/<phase>/scope-rules.json — phase별 금지/허용 규칙."""
         if self._scope_rules_cache is None:
             self._scope_rules_cache = self._load_scope_rules_file(
                 self.root / "phases" / self.phase / SCOPE_RULES_FILENAME
@@ -757,6 +766,7 @@ class AutopilotRunner:
         return self._scope_rules_cache
 
     def _global_scope_rules(self) -> dict:
+        """.codex/scope-rules.json — 모든 phase에 적용되는 금지 규칙."""
         if self._global_scope_rules_cache is None:
             self._global_scope_rules_cache = self._load_scope_rules_file(
                 self.root / ".codex" / SCOPE_RULES_FILENAME
@@ -820,6 +830,7 @@ class AutopilotRunner:
         normalized = path.replace("\\", "/")
         return (
             normalized in self.FORBIDDEN_SCAN_EXCLUDED_PATHS
+            # scope-rules.json은 정의상 금지 키워드를 담으므로 스캔에서 제외한다.
             or Path(normalized).name == SCOPE_RULES_FILENAME
             or any(normalized.startswith(prefix) for prefix in self.FORBIDDEN_SCAN_EXCLUDED_PREFIXES)
             or self.STEP_OUTPUT_RE.match(normalized) is not None
@@ -953,6 +964,12 @@ class AutopilotRunner:
         )
 
     def _parse_review_result(self, stdout: str) -> ReviewResult | None:
+        """codex exec --json JSONL 스트림에서 마지막 agent 메시지의 JSON 결과를 읽는다.
+
+        `--output-last-message` 파일이 우선이고, 이 파서는 그 fallback이다.
+        알려진 이벤트 형태(item/message/msg 노드의 text·message·content[].text)만
+        본다. 임의 키 재귀 탐색은 하지 않는다.
+        """
         result: ReviewResult | None = None
         for raw in stdout.splitlines():
             line = raw.strip()
@@ -971,6 +988,7 @@ class AutopilotRunner:
                 result = parsed
         if result is not None:
             return result
+        # JSONL이 아닌 단일(또는 pretty-printed) JSON 출력 fallback.
         return self._review_from_text(stdout)
 
     @staticmethod
@@ -1131,6 +1149,7 @@ class AutopilotRunner:
             "수정 후 가능한 검증을 실행하고, 수정한 파일은 working tree에 남겨두세요."
         )
         cmd = codex_base_cmd(self.fix_effort)
+        # 프롬프트는 argv 대신 stdin으로 전달해서 ARG_MAX 한계를 피한다.
         cmd.append("-")
         self._run(cmd, timeout=CODEX_EXEC_TIMEOUT, input_text=prompt)
 
