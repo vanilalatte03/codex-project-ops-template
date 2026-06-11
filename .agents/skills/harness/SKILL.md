@@ -253,7 +253,7 @@ python scripts/checks.py --stage manual
 python scripts/execute.py {작업명}
 python scripts/execute.py {작업명} --push
 python scripts/execute.py {작업명} --next-step-only
-python scripts/autopilot.py {작업명} --max-review-fixes 2
+python scripts/autopilot.py {작업명} --max-review-fixes 2  # phase 전체 구현 시 권장
 python scripts/autopilot.py {작업명} --dry-run --max-steps 1
 ```
 

@@ -233,6 +233,13 @@ def candidate_tests(path: str) -> list[Path]:
                 Path("tests") / f"{stem}_test.py",
             ]
         )
+        if target.parts and target.parts[0] == "scripts":
+            candidates.extend(
+                [
+                    Path("scripts") / "tests" / f"test_{stem}.py",
+                    Path("scripts") / "tests" / f"{stem}_test.py",
+                ]
+            )
         if target.parts and target.parts[0] == "src":
             relative = Path(*target.parts[1:])
             candidates.extend(

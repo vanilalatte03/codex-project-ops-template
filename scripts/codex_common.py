@@ -13,8 +13,8 @@ from pathlib import Path
 # 자동으로 따라온다. 인스턴스는 마지막으로 동기화한 버전을
 # .codex/project-profile.json `templateVersion`에 기록하고, doctor가 둘을
 # 비교해 "harness 파일과 동기화 기록이 어긋난 상태"를 잡는다.
-# 업그레이드 절차는 템플릿 README의 "Harness 버전과 업그레이드"를 따른다.
-TEMPLATE_VERSION = "2026.06.11"
+# 업그레이드 절차는 템플릿 guides/UPGRADE.md를 따른다.
+TEMPLATE_VERSION = "2026.06.12"
 
 ALLOWED_CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 CODEX_EXEC_TIMEOUT = 1800

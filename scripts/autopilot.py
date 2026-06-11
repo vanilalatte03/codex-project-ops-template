@@ -157,8 +157,8 @@ class AutopilotRunner:
     # 테스트 fixture가 금지 키워드 문자열을 포함하는 파일들. 스캐너 코드 자체는
     # 키워드를 갖지 않으므로 (.codex/scope-rules.json으로 외부화) 제외하지 않는다.
     FORBIDDEN_SCAN_EXCLUDED_PATHS = (
-        "scripts/test_autopilot.py",
-        "scripts/test_checks.py",
+        "scripts/tests/test_autopilot.py",
+        "scripts/tests/test_checks.py",
     )
     FORBIDDEN_SCAN_EXCLUDED_PREFIXES = (
         "issues/",
@@ -347,10 +347,13 @@ class AutopilotRunner:
                     ["tasklist", "/FI", f"PID eq {pid}"],
                     capture_output=True,
                     text=True,
+                    errors="replace",
                     timeout=5,
                 )
             except (OSError, subprocess.TimeoutExpired):
                 return True
+            if result.stdout is None:
+                return False
             return str(pid) not in result.stdout
         try:
             os.kill(pid, 0)

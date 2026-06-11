@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
 import autopilot as ap
 
 
@@ -712,7 +711,7 @@ def test_preconditions_block_when_base_checks_fail(runner):
     runner._git = lambda *args, check=True: cp(stdout="")
     runner._gh = lambda *args, check=True, timeout=None: cp()
     runner._run_shell = lambda command, check=True, timeout=None: cp(
-        returncode=1, stdout="FAILED scripts/test_x.py"
+        returncode=1, stdout="FAILED scripts/tests/test_x.py"
     )
 
     with pytest.raises(ap.AutopilotError) as exc_info:
@@ -720,7 +719,7 @@ def test_preconditions_block_when_base_checks_fail(runner):
 
     assert "manual 검증이 이미 실패" in str(exc_info.value)
     assert "--skip-base-checks" in str(exc_info.value)
-    assert "FAILED scripts/test_x.py" in str(exc_info.value)
+    assert "FAILED scripts/tests/test_x.py" in str(exc_info.value)
 
 
 def test_skip_base_checks_bypasses_base_verification(tmp_repo):

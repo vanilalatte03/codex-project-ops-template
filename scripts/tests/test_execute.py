@@ -5,14 +5,12 @@ execute.py 리팩터링 안전망 테스트.
 
 import json
 import subprocess
-import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
 import execute as ex
 
 
