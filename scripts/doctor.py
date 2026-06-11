@@ -19,6 +19,7 @@ REQUIRED_FILES = [
     "docs/ARCHITECTURE.md",
     "docs/ADR.md",
     "docs/COMMANDS.md",
+    "docs/SCOPE_CHANGE_CHECKLIST.md",
     ".codex/config.toml",
     ".codex/hooks.json",
     ".codex/project-profile.json",

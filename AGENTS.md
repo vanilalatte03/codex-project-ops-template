@@ -4,6 +4,7 @@
 - <이 프로젝트가 해결하는 문제를 한 문장으로 작성>
 - MVP는 `docs/PRD.md`의 범위만 구현한다.
 - 계획이 바뀌면 구현 전에 `docs/`와 phase 문서를 먼저 갱신한다.
+- MVP나 phase 범위가 바뀌면 `docs/SCOPE_CHANGE_CHECKLIST.md`로 갱신 대상을 먼저 확인한다.
 
 ## 기술 스택
 - Runtime/Framework: <Spring Boot | Python | Node | 기타>
