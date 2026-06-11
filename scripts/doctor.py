@@ -21,6 +21,7 @@ REQUIRED_FILES = [
     ".codex/config.toml",
     ".codex/hooks.json",
     ".codex/project-profile.json",
+    ".codex/scope-rules.json",
     ".codex/hooks/tdd-guard.py",
     ".codex/hooks/tdd-guard.sh",
     ".gitattributes",
@@ -31,6 +32,7 @@ REQUIRED_FILES = [
     "scripts/execute.py",
     "scripts/autopilot.py",
     "scripts/checks.py",
+    "scripts/codex_common.py",
     "scripts/doctor.py",
     "scripts/guard.py",
 ]
@@ -138,6 +140,18 @@ def _template_contract_issues(root: Path) -> list[str]:
     for attr in required_attrs:
         if attr not in gitattributes:
             issues.append(f".gitattributes must include `{attr}`.")
+
+    scope_rules = root / ".codex" / "scope-rules.json"
+    if scope_rules.exists():
+        try:
+            payload = json.loads(scope_rules.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            issues.append(f".codex/scope-rules.json is not valid JSON: {exc}")
+        else:
+            if not isinstance(payload, dict):
+                issues.append(".codex/scope-rules.json must contain a JSON object.")
+            elif "forbidden" in payload and not isinstance(payload["forbidden"], list):
+                issues.append(".codex/scope-rules.json `forbidden` must be a list.")
     return issues
 
 

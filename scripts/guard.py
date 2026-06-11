@@ -45,8 +45,13 @@ SKIP_NAMES = {
     "yarn.lock",
 }
 DANGEROUS_RULES = [
-    (re.compile(r"\brm\s+--?[A-Za-z]*r[A-Za-z]*f[A-Za-z]*\b"), "recursive forced removal is blocked"),
-    (re.compile(r"\brm\s+--?[A-Za-z]*f[A-Za-z]*r[A-Za-z]*\b"), "recursive forced removal is blocked"),
+    (
+        re.compile(
+            r"\brm\b(?=[^\n;&|]*\s(?:-[A-Za-z]*r[A-Za-z]*|--recursive)\b)"
+            r"(?=[^\n;&|]*\s(?:-[A-Za-z]*f[A-Za-z]*|--force)\b)"
+        ),
+        "recursive forced removal is blocked",
+    ),
     (re.compile(r"\bgit\s+reset\s+--hard\b"), "hard resets are blocked"),
     (re.compile(r"\bgit\s+clean\s+-[A-Za-z]*[fdx][A-Za-z]*\b"), "git clean with file deletion is blocked"),
     (re.compile(r"\bgit\s+push\b[^\n;&|]*\s--force(?:-with-lease)?\b"), "force pushes are blocked"),
@@ -77,11 +82,15 @@ def _command_from_payload(payload: dict) -> str:
     return ""
 
 
-def _danger_reason(command: str) -> str | None:
+def danger_reason(command: str) -> str | None:
+    """Public entry point so other Harness scripts can vet shell commands."""
     for pattern, message in DANGEROUS_RULES:
         if pattern.search(command):
             return f"{message}: {command.strip()}"
     return None
+
+
+_danger_reason = danger_reason
 
 
 def _emit_pretool_block(reason: str):

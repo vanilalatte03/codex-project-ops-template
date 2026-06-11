@@ -5,6 +5,7 @@ next-env.d.ts
 tsconfig.tsbuildinfo
 __pycache__/
 *.pyc
+.codex/autopilot.lock
 
 # phase execution outputs
 phases/**/phase*-output.json

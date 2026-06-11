@@ -218,6 +218,37 @@ class TestLoadGuardrails:
             result = inst._load_guardrails()
         assert result == ""
 
+    def test_referenced_docs_limit_attachment(self, executor, tmp_project):
+        (executor._phase_dir / "step2.md").write_text(
+            "# Step 2: UI\n\ndocs/arch.md 계약을 따라 UI를 구현하세요.",
+            encoding="utf-8",
+        )
+        with patch.object(ex, "ROOT", tmp_project):
+            result = executor._load_guardrails()
+
+        assert "# Architecture" in result
+        assert "# Guide" not in result
+        assert "직접 읽어라" in result
+        assert "# Rules" in result
+        assert "# Phase README" in result
+
+    def test_guardrail_docs_profile_overrides_references(self, executor, tmp_project):
+        (executor._phase_dir / "step2.md").write_text(
+            "# Step 2: UI\n\ndocs/arch.md 계약을 따라 UI를 구현하세요.",
+            encoding="utf-8",
+        )
+        codex_dir = tmp_project / ".codex"
+        codex_dir.mkdir()
+        (codex_dir / "project-profile.json").write_text(
+            json.dumps({"guardrailDocs": ["docs/guide.md"]}),
+            encoding="utf-8",
+        )
+        with patch.object(ex, "ROOT", tmp_project):
+            result = executor._load_guardrails()
+
+        assert "# Guide" in result
+        assert "# Architecture" not in result
+
 
 # ---------------------------------------------------------------------------
 # _build_step_context
@@ -559,14 +590,14 @@ class TestInvokeCodex:
         assert cmd[1] == "exec"
         assert "--json" in cmd
         assert ex.CODEX_ENV_CONFIG in cmd
-        assert "model_reasoning_effort" not in " ".join(cmd)
+        assert 'model_reasoning_effort="medium"' in cmd
         assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
         assert cmd[-1] == "-"
         assert "PREAMBLE" in mock_run.call_args.kwargs["input"]
         assert "UI를 구현하세요" in mock_run.call_args.kwargs["input"]
 
-    def test_reasoning_effort_adds_codex_config(self, executor):
-        executor._reasoning_effort = "medium"
+    def test_codex_effort_adds_codex_config(self, executor):
+        executor._codex_effort = "high"
         mock_result = MagicMock(returncode=0, stdout="{}", stderr="")
         step = {"step": 2, "name": "ui"}
 
@@ -574,7 +605,8 @@ class TestInvokeCodex:
             executor._invoke_codex(step, "preamble")
 
         cmd = mock_run.call_args[0][0]
-        assert cmd[:4] == [ex.CODEX_BIN, "exec", "-c", 'model_reasoning_effort="medium"']
+        assert cmd[:2] == [ex.CODEX_BIN, "exec"]
+        assert 'model_reasoning_effort="high"' in cmd
         assert ex.CODEX_ENV_CONFIG in cmd
         assert "--json" in cmd
 
@@ -617,6 +649,70 @@ class TestInvokeCodex:
             executor._invoke_codex(step, "preamble")
 
         assert mock_run.call_args[1]["timeout"] == 1800
+
+    def test_timeout_expired_is_recorded_not_raised(self, executor):
+        step = {"step": 2, "name": "ui"}
+
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="codex", timeout=1800)):
+            output = executor._invoke_codex(step, "preamble")
+
+        assert output["exitCode"] == 124
+        assert "1800초" in output["stderr"]
+        saved = json.loads((executor._phase_dir / "step2-output.json").read_text(encoding="utf-8"))
+        assert saved["exitCode"] == 124
+
+
+# ---------------------------------------------------------------------------
+# _verify_acceptance
+# ---------------------------------------------------------------------------
+
+class TestVerifyAcceptance:
+    def _write_step_with_ac(self, executor, commands):
+        body = "\n".join(
+            [
+                "# Step 2: UI",
+                "",
+                "## 인수 기준",
+                "",
+                "```bash",
+                *commands,
+                "```",
+            ]
+        )
+        (executor._phase_dir / "step2.md").write_text(body, encoding="utf-8")
+
+    def test_no_acceptance_section_passes(self, executor):
+        assert executor._verify_acceptance(2) is None
+
+    def test_runs_commands_and_passes(self, executor):
+        self._write_step_with_ac(executor, ["echo ok"])
+        mock_result = MagicMock(returncode=0, stdout="ok", stderr="")
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            assert executor._verify_acceptance(2) is None
+
+        assert mock_run.call_args[0][0] == "echo ok"
+
+    def test_failing_command_returns_error(self, executor):
+        self._write_step_with_ac(executor, ["false"])
+        mock_result = MagicMock(returncode=1, stdout="", stderr="boom")
+
+        with patch("subprocess.run", return_value=mock_result):
+            error = executor._verify_acceptance(2)
+
+        assert error is not None
+        assert "`false` 실패" in error
+        assert "boom" in error
+
+    def test_dangerous_command_is_blocked_without_running(self, executor):
+        self._write_step_with_ac(executor, ["rm -r -f build"])
+
+        with patch("subprocess.run") as mock_run:
+            error = executor._verify_acceptance(2)
+
+        assert error is not None
+        assert "위험 명령 정책" in error
+        mock_run.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -691,11 +787,12 @@ class TestMainCli:
             "branch_name": "codex/test",
             "step_number": 2,
             "next_step_only": False,
-            "reasoning_effort": None,
+            "codex_effort": "medium",
+            "allow_xhigh": False,
             "ran": True,
         }
 
-    def test_cli_passes_reasoning_effort(self):
+    def test_cli_passes_codex_effort_alias(self):
         captured = {}
 
         class DummyExecutor:
@@ -710,7 +807,7 @@ class TestMainCli:
             with patch.object(ex, "StepExecutor", DummyExecutor):
                 ex.main()
 
-        assert captured["reasoning_effort"] == "medium"
+        assert captured["codex_effort"] == "medium"
 
 
 # ---------------------------------------------------------------------------

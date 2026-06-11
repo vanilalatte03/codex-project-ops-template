@@ -25,6 +25,8 @@
 - 기술 결정은 `docs/adr/0001-title.md` 형식으로 둔다.
 - `docs/ADR.md`는 ADR 인덱스로 유지한다.
 - 실행 명령은 `docs/COMMANDS.md`를 단일 출처로 삼는다.
+- 프로젝트 전역 scope 금지 규칙은 `.codex/scope-rules.json`에 둔다.
+- phase별 scope 확장/허용 규칙은 `phases/{phase}/scope-rules.json`에 둔다.
 - phase 작업은 `phases/{phase}/README.md`, `phases/{phase}/index.json`, `phases/{phase}/stepN.md`에 둔다.
 - phase 실패 기록은 `issues/{phase}/issue-N.md`에 둔다.
 
@@ -39,7 +41,7 @@
 - 코드 변경은 현재 step 범위에 맞춘다.
 - 사용자의 기존 변경은 되돌리지 않는다.
 - 큰 작업은 Harness skill로 phase/step 단위로 나눈다.
-- step PR 자동 루프는 `scripts/autopilot.py <phase> --base main --max-review-fixes 2`를 사용한다.
+- step PR 자동 루프는 `scripts/autopilot.py <phase> --max-review-fixes 2`를 사용한다.
 - step 완료 시 `phases/{phase}/index.json`의 status와 summary를 갱신한다.
 - step PR 리뷰가 실패하면 같은 PR 브랜치에서 수정하고 `issues/{phase}/issue-N.md`에 기록한다.
 - 자체 리뷰는 review skill 기준으로 수행한다.
@@ -57,5 +59,5 @@
 - 테스트: `<docs/COMMANDS.md의 test 명령>`
 - 빌드: `<docs/COMMANDS.md의 build 명령>`
 - 수동 검증: `python scripts/checks.py --stage manual`
-- Step PR 루프: `python scripts/autopilot.py <phase-name> --base main --max-review-fixes 2`
+- Step PR 루프: `python scripts/autopilot.py <phase-name> --max-review-fixes 2`
 - 환경 점검: `python scripts/doctor.py --instance`

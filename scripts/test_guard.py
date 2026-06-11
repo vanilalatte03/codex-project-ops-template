@@ -17,6 +17,35 @@ def test_dangerous_command_blocks_pretool(capsys):
     assert "hard resets" in output["reason"]
 
 
+def test_rm_recursive_force_variants_are_blocked():
+    blocked = [
+        "rm -rf build",
+        "rm -fr build",
+        "rm -r -f build",
+        "rm -f -r build",
+        "rm --recursive --force build",
+        "rm --force --recursive build",
+        "rm -r --force build",
+    ]
+    for command in blocked:
+        assert guard.danger_reason(command) is not None, command
+
+
+def test_rm_without_both_flags_is_allowed():
+    allowed = [
+        "rm -f stale.lock",
+        "rm -r build",
+        "rm notes.txt",
+        "rm -f a.txt && echo done",
+    ]
+    for command in allowed:
+        assert guard.danger_reason(command) is None, command
+
+
+def test_rm_flags_split_across_segments_are_not_joined():
+    assert guard.danger_reason("rm -r build && rm -f stale.lock") is None
+
+
 def test_soft_tdd_missing_test_warns_without_block(tmp_path, capsys):
     payload = {"tool_input": {"path": "src/service.py"}}
     with patch.object(guard, "ROOT", tmp_path):

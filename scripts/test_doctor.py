@@ -34,6 +34,10 @@ def _write_ready_files(root: Path):
         json.dumps({"projectName": "demo", "guardMode": "soft", "commands": {}}),
         encoding="utf-8",
     )
+    (root / ".codex" / "scope-rules.json").write_text(
+        json.dumps({"forbidden": []}),
+        encoding="utf-8",
+    )
     _write_cross_platform_hook_contract(root)
 
 
@@ -52,6 +56,10 @@ def _write_template_files(root: Path):
     (root / "docs" / "COMMANDS.md").write_text("# Commands\n", encoding="utf-8")
     (root / ".codex" / "project-profile.json").write_text(
         json.dumps({"projectName": "<project-name>", "guardMode": "soft", "commands": {}}),
+        encoding="utf-8",
+    )
+    (root / ".codex" / "scope-rules.json").write_text(
+        json.dumps({"forbidden": []}),
         encoding="utf-8",
     )
     _write_cross_platform_hook_contract(root)
@@ -101,6 +109,7 @@ def test_required_files_cover_readme_core_operations_contract():
         "scripts/execute.py",
         "scripts/autopilot.py",
         "scripts/checks.py",
+        "scripts/codex_common.py",
         "scripts/doctor.py",
         "scripts/guard.py",
     }
@@ -114,6 +123,7 @@ def test_required_files_cover_readme_core_operations_contract():
         ".codex/config.toml",
         "scripts/execute.py",
         "scripts/checks.py",
+        "scripts/codex_common.py",
         "scripts/doctor.py",
         "scripts/guard.py",
     ],
