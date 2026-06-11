@@ -540,7 +540,13 @@ def main(argv: list[str] | None = None) -> int:
             print("No lint/test/build commands configured or detected.")
         return 0
     require_required = args.stage in {"manual", "pre-commit", "final"}
-    return run_checks(checks, ROOT, timeout=args.timeout, require_required=require_required)
+    exit_code = run_checks(checks, ROOT, timeout=args.timeout, require_required=require_required)
+    if exit_code == 0 and args.stage == "final":
+        # final gate는 docs-check 명령 등록 여부와 무관하게 phase 문서 정합성
+        # (finalRequired 포함)을 내장 실행한다. COMMANDS.md의 docs-check 행
+        # 등록에 의존하면 기본 인스턴스에서 finalRequired가 검사 없이 통과한다.
+        return run_docs_checks(ROOT, args.docs_check_config, include_final_rules=True)
+    return exit_code
 
 
 if __name__ == "__main__":
