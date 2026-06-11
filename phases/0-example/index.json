@@ -1,0 +1,8 @@
+{
+  "project": "<프로젝트명>",
+  "phase": "0-example",
+  "steps": [
+    { "step": 0, "name": "project-setup", "status": "pending" },
+    { "step": 1, "name": "note-commands", "status": "pending" }
+  ]
+}

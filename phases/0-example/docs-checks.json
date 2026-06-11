@@ -1,0 +1,42 @@
+{
+  "paths": [
+    "phases/0-example"
+  ],
+  "skipDirs": [
+    ".git",
+    "build",
+    "node_modules",
+    "__pycache__"
+  ],
+  "skipSuffixes": [
+    ".class",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".json",
+    ".png",
+    ".webp"
+  ],
+  "required": [
+    {
+      "name": "phase README 목표 섹션 유지",
+      "paths": ["phases/0-example/README.md"],
+      "pattern": "^## 목표$"
+    }
+  ],
+  "finalRequired": [
+    {
+      "name": "phase README 완료 기준 유지",
+      "paths": ["phases/0-example/README.md"],
+      "pattern": "^## 완료 기준$"
+    }
+  ],
+  "forbidden": [
+    {
+      "name": "폐기된 예시 API 경로가 문서에 되살아나면 실패",
+      "paths": ["phases/0-example"],
+      "pattern": "deprecated-notes-api"
+    }
+  ]
+}
