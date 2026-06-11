@@ -9,6 +9,8 @@
     "build": [],
     "review": []
   },
+  "stageChecks": {},
+  "guardrailDocs": [],
   "sourceRoots": [
     "src",
     "app"

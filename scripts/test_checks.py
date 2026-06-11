@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 import checks
@@ -149,3 +149,105 @@ def test_run_checks_executes_when_required_commands_exist(tmp_path):
     status = checks.run_checks(commands, tmp_path)
 
     assert status == 0
+
+
+def test_stop_stage_defaults_to_lint_only(tmp_path):
+    codex = tmp_path / ".codex"
+    codex.mkdir()
+    (codex / "project-profile.json").write_text(
+        json.dumps({"commands": {"lint": ["custom lint"], "test": ["custom test"], "build": ["custom build"]}})
+    )
+
+    stop_selected = checks.collect_checks(tmp_path, "stop")
+    manual_selected = checks.collect_checks(tmp_path, "manual")
+
+    assert [command.name for command in stop_selected] == ["lint"]
+    assert [command.name for command in manual_selected] == ["lint", "test", "build"]
+
+
+def test_stage_checks_profile_override_expands_stop_stage(tmp_path):
+    codex = tmp_path / ".codex"
+    codex.mkdir()
+    (codex / "project-profile.json").write_text(
+        json.dumps(
+            {
+                "commands": {"lint": ["custom lint"], "test": ["custom test"]},
+                "stageChecks": {"stop": ["lint", "test"]},
+            }
+        )
+    )
+
+    stop_selected = checks.collect_checks(tmp_path, "stop")
+
+    assert [command.name for command in stop_selected] == ["lint", "test"]
+
+
+def test_run_checks_timeout_returns_124(tmp_path, capsys):
+    commands = [
+        checks.CheckCommand("test", "slow test", "test"),
+        checks.CheckCommand("build", "slow build", "test"),
+    ]
+
+    with patch("subprocess.run", side_effect=checks.subprocess.TimeoutExpired(cmd="slow", timeout=1)):
+        status = checks.run_checks(commands, tmp_path, timeout=1)
+
+    assert status == 124
+    assert "timed out" in capsys.readouterr().err
+
+
+def test_run_checks_streams_without_capture(tmp_path):
+    commands = [
+        checks.CheckCommand("test", "echo test", "test"),
+        checks.CheckCommand("build", "echo build", "test"),
+    ]
+
+    with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
+        status = checks.run_checks(commands, tmp_path, timeout=123)
+
+    assert status == 0
+    assert mock_run.call_args.kwargs["timeout"] == 123
+    assert "capture_output" not in mock_run.call_args.kwargs
+
+
+def test_docs_check_required_forbidden_and_final_rules(tmp_path, capsys):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PRD.md").write_text("READY\nDO_NOT_SHIP\n", encoding="utf-8")
+    config = tmp_path / "docs-checks.json"
+    config.write_text(
+        json.dumps(
+            {
+                "paths": ["docs"],
+                "required": [{"name": "ready marker", "pattern": "READY"}],
+                "finalRequired": [{"name": "qa marker", "pattern": "QA_PASS"}],
+                "forbidden": [{"name": "forbidden marker", "pattern": "DO_NOT_SHIP"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert checks.run_docs_checks(tmp_path, str(config)) == 1
+    captured = capsys.readouterr()
+    assert "Forbidden docs marker" in captured.err
+
+    (docs / "PRD.md").write_text("READY\n", encoding="utf-8")
+    assert checks.run_docs_checks(tmp_path, str(config)) == 0
+    assert checks.run_docs_checks(tmp_path, str(config), include_final_rules=True) == 1
+
+    (docs / "QA.md").write_text("QA_PASS\n", encoding="utf-8")
+    assert checks.run_docs_checks(tmp_path, str(config), include_final_rules=True) == 0
+
+
+def test_discover_docs_check_config_prefers_active_phase(tmp_path):
+    phase4 = tmp_path / "phases" / "4-old"
+    phase5 = tmp_path / "phases" / "5-current"
+    phase4.mkdir(parents=True)
+    phase5.mkdir(parents=True)
+    (tmp_path / "phases" / "index.json").write_text(
+        json.dumps({"phases": [{"dir": "4-old", "status": "completed"}, {"dir": "5-current", "status": "pending"}]}),
+        encoding="utf-8",
+    )
+    (phase4 / "docs-checks.json").write_text(json.dumps({"paths": ["docs"], "required": []}), encoding="utf-8")
+    (phase5 / "docs-checks.json").write_text(json.dumps({"paths": ["README.md"], "required": []}), encoding="utf-8")
+
+    assert checks.discover_docs_check_config(tmp_path) == phase5 / "docs-checks.json"

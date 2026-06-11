@@ -19,10 +19,15 @@ Harness 작업은 작은 step PR 단위로 운영한다.
 - 같은 PR 브랜치에서 최대 `--max-review-fixes`회 자동 수정과 재리뷰를 진행한다.
 - 자동 수정 후에도 실패하면 PR과 Issue를 열어둔 채 루프를 중단한다.
 - 자동 병합 방식은 squash merge로 고정한다.
+- PR ready 후 원격 체크는 `gh pr checks --watch`로 확인하고, 체크 생성 지연은 grace
+  기간 동안 재시도한다.
+- 금지/허용 범위 규칙은 템플릿 스크립트가 아니라 `.codex/scope-rules.json`과
+  `phases/<phase>/scope-rules.json`에 데이터로 둔다.
 
 ## Consequences
 - 구현 작업은 `codex/{phase}-step{N}-{name}` 브랜치와 작은 PR 중심으로 추적된다.
 - 실패 원인은 GitHub와 로컬 파일 양쪽에 남아 재시도 맥락이 보존된다.
 - `gh auth status`가 유효하지 않으면 자동 PR 루프는 시작할 수 없다.
 - 템플릿은 특정 도메인의 금지 키워드나 제품 규칙을 내장하지 않는다. 범위 판단은
-  `AGENTS.md`, `docs/`, phase `README.md`, 현재 `stepN.md`를 기준으로 수행한다.
+  `AGENTS.md`, `docs/`, phase `README.md`, 현재 `stepN.md`, scope rule overlay를
+  기준으로 수행한다.
