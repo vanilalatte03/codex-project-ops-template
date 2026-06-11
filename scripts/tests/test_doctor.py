@@ -152,7 +152,7 @@ def _write_cross_platform_hook_contract(root: Path):
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": "python .codex/hooks/tdd-guard.py stop",
+                                    "command": "python3 .codex/hooks/tdd-guard.py stop",
                                 }
                             ]
                         }
@@ -274,8 +274,21 @@ def test_template_mode_detects_legacy_hook_command(tmp_path):
 
     issues = doctor.collect_issues(tmp_path, "template")
 
-    assert any("cross-platform tdd-guard.py" in issue for issue in issues)
+    assert any("through python3" in issue for issue in issues)
     assert any("legacy POSIX shell hook commands" in issue for issue in issues)
+
+
+def test_template_mode_detects_bare_python_hook_command(tmp_path):
+    _write_template_files(tmp_path)
+    (tmp_path / ".codex" / "hooks.json").write_text(
+        '{ "command": "python .codex/hooks/tdd-guard.py stop" }',
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    assert any("through python3" in issue for issue in issues)
+    assert any("bare `python` command" in issue for issue in issues)
 
 
 def test_template_mode_detects_missing_line_ending_policy(tmp_path):

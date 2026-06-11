@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .codex/hooks/tdd-guard.py tdd-pre-tool-use",
+            "command": "python3 .codex/hooks/tdd-guard.py tdd-pre-tool-use",
             "timeout": 10,
             "statusMessage": "Checking TDD guard"
           }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .codex/hooks/tdd-guard.py pre-tool-use",
+            "command": "python3 .codex/hooks/tdd-guard.py pre-tool-use",
             "timeout": 10,
             "statusMessage": "Checking command policy"
           }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .codex/hooks/tdd-guard.py permission-request",
+            "command": "python3 .codex/hooks/tdd-guard.py permission-request",
             "timeout": 10,
             "statusMessage": "Checking approval policy"
           }
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .codex/hooks/tdd-guard.py stop",
+            "command": "python3 .codex/hooks/tdd-guard.py stop",
             "timeout": 120,
             "statusMessage": "Running project checks"
           }

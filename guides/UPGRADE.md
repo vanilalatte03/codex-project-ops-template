@@ -20,20 +20,30 @@
 | 단위 | 소유 | 업그레이드 시 |
 | --- | --- | --- |
 | `scripts/` (테스트 포함) | 템플릿 | 통째로 덮어쓰기 |
-| `.agents/skills/` | 템플릿 | 통째로 덮어쓰기 |
+| `.agents/skills/harness/`, `.agents/skills/review/` | 템플릿 공통 스킬 | 각 디렉터리만 통째로 덮어쓰기 |
 | `.githooks/`, `.codex/hooks/`, `.codex/hooks.json`, `.codex/config.toml`, `.gitattributes` | 템플릿 | 통째로 덮어쓰기 |
 | `guides/PROMPTS.md`, `guides/CONFIGURATION.md`, `guides/UPGRADE.md` | 템플릿 | 통째로 덮어쓰기 |
 | `.github/workflows/template-ci.yml` | 템플릿 전용 | 인스턴스에는 복사하지 않음 |
+| `.agents/skills/<project-skill>/` | 프로젝트 | 덮어쓰지 않음 |
 | `AGENTS.md`, `docs/`, `phases/`, `issues/`, `archive/` | 프로젝트 | 덮어쓰지 않음 |
 | `.codex/project-profile.json`, `.codex/scope-rules.json`, `phases/*/scope-rules.json` | 프로젝트 | 덮어쓰지 않음. 단 `templateVersion` 키만 갱신 |
+
+`.agents/skills/`는 템플릿 공통 스킬과 프로젝트 전용 스킬이 함께 들어갈 수 있는
+혼합 루트입니다. 업그레이드할 때 루트 전체를 삭제하거나 동기화하지 말고,
+템플릿이 소유한 공통 스킬 디렉터리만 이름 기준으로 교체합니다. 템플릿에 새 공통
+스킬이 추가되면 이 표에 해당 디렉터리를 먼저 추가한 뒤 인스턴스 업그레이드
+절차에 포함합니다. 프로젝트 전용 스킬은 템플릿 공통 스킬과 같은 이름을 쓰지
+않습니다. 이름이 충돌하면 업그레이드 전에 프로젝트 스킬 이름을 바꾸거나 공통
+스킬 편입 여부를 결정합니다.
 
 `.github/workflows/template-ci.yml`은 템플릿 repo 전용 검증입니다. 실제 프로젝트
 인스턴스에는 복사하지 않고, 이미 복사했다면 삭제합니다. 실제 프로젝트의 CI는
 `docs/COMMANDS.md`에 확정한 `lint`, `test`, `build` 명령 기준으로 별도 작성합니다.
 
-인스턴스에서 `scripts/` 같은 템플릿 소유 파일을 직접 고치면 다음 업그레이드 때
-덮어써 사라집니다. harness 개선이 필요하면 템플릿 repo에 먼저 반영해 버전을
-올리고, 업그레이드 절차로 인스턴스에 가져옵니다.
+인스턴스에서 `scripts/`나 `.agents/skills/harness/` 같은 템플릿 소유 파일을 직접
+고치면 다음 업그레이드 때 덮어써 사라집니다. harness나 review 공통 스킬 개선이
+필요하면 템플릿 repo에 먼저 반영해 버전을 올리고, 업그레이드 절차로 인스턴스에
+가져옵니다. 프로젝트별 작업 방식은 별도 프로젝트 전용 스킬 디렉터리로 둡니다.
 
 ## 업그레이드 절차
 

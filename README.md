@@ -36,8 +36,8 @@ Windows PowerShell:
 git config core.hooksPath .githooks
 ```
 
-Windows에서는 Python 설치 시 `python.exe`를 PATH에 추가해야 Codex hook이
-PowerShell에서 바로 실행됩니다.
+Codex hook은 `.codex/hooks.json`에서 `python3` 명령으로 실행됩니다. Windows에서는
+Python 설치 후 앱 실행 환경의 PATH에서 `python3`가 동작하는지 확인합니다.
 
 Codex 앱의 tool hook은 터미널 명령이 아니라 앱 설정에서 켭니다.
 
@@ -161,7 +161,8 @@ autopilot은 step마다 아래 루프를 반복합니다.
 
 복사한 인스턴스는 `.codex/project-profile.json`의 `templateVersion` 마커로
 템플릿과의 동기화 상태를 추적하고, 템플릿 소유 단위(`scripts/`,
-`.agents/skills/`, hook 설정)를 통째로 덮어쓰는 방식으로 업그레이드합니다.
+`.agents/skills/harness/`, `.agents/skills/review/`, hook 설정)를 통째로
+덮어쓰는 방식으로 업그레이드합니다. 프로젝트 전용 skill 디렉터리는 보존합니다.
 파일 소유 구분과 절차는 [guides/UPGRADE.md](guides/UPGRADE.md)를 참조합니다.
 
 ## 템플릿 자체 개발
