@@ -53,6 +53,7 @@ PLACEHOLDER_FILES = [
 PLACEHOLDER_PATTERN = re.compile(r"<[^>\n]+>|TODO|TBD")
 MODES = ("template", "instance")
 LEGACY_HOOK_MARKERS = ("/bin/bash", "/usr/bin/python3", "$(git rev-parse")
+PYTHON_ONLY_HOOK_MARKER = "python .codex/hooks/tdd-guard.py"
 # phase 파일 형식의 살아있는 예시. SKILL.md 산문과 달리 스키마가 깨지면
 # template 모드 doctor(및 CI)가 잡아내므로, 형식 변경 시 예시도 함께 갱신된다.
 EXAMPLE_PHASE_DIR = "phases/0-example"
@@ -159,8 +160,10 @@ def _template_contract_issues(root: Path) -> list[str]:
             issues.append(f"{rel} is missing.")
 
     hooks_json = _read_text(root, ".codex/hooks.json")
-    if "tdd-guard.py" not in hooks_json:
-        issues.append(".codex/hooks.json must call the cross-platform tdd-guard.py launcher.")
+    if "python3 .codex/hooks/tdd-guard.py" not in hooks_json:
+        issues.append(".codex/hooks.json must call tdd-guard.py through python3, not bare python.")
+    if PYTHON_ONLY_HOOK_MARKER in hooks_json:
+        issues.append(".codex/hooks.json still depends on a bare `python` command.")
     if any(marker in hooks_json for marker in LEGACY_HOOK_MARKERS):
         issues.append(".codex/hooks.json still contains legacy POSIX shell hook commands.")
 
