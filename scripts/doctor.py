@@ -106,12 +106,34 @@ def _profile_issues(root: Path, mode: str) -> list[str]:
         return [f".codex/project-profile.json is not valid JSON: {exc}"]
 
     issues: list[str] = []
+    version = str(profile.get("templateVersion", "")).strip()
     if mode == "template":
+        # 템플릿 repo에서는 profile의 templateVersion과 harness 상수가 같아야
+        # 복사된 인스턴스가 일치한 상태로 시작한다. 한쪽만 올리는 실수를 CI가 잡는다.
+        if version != codex_common.TEMPLATE_VERSION:
+            issues.append(
+                ".codex/project-profile.json templateVersion must equal "
+                f"scripts/codex_common.py TEMPLATE_VERSION ({codex_common.TEMPLATE_VERSION})."
+            )
         return issues
 
     project_name = str(profile.get("projectName", "")).strip()
     if not project_name or _is_placeholder(project_name):
         issues.append(".codex/project-profile.json projectName still has a placeholder value.")
+
+    # 설치된 harness 버전(scripts/와 함께 덮어써지는 상수)과 인스턴스의 동기화
+    # 기록이 어긋나면 업그레이드가 절반만 끝난 상태다.
+    if not version:
+        issues.append(
+            ".codex/project-profile.json templateVersion is missing. Record the template "
+            f"version this instance is synced to (installed harness: {codex_common.TEMPLATE_VERSION})."
+        )
+    elif version != codex_common.TEMPLATE_VERSION:
+        issues.append(
+            f".codex/project-profile.json templateVersion '{version}' does not match harness "
+            f"TEMPLATE_VERSION '{codex_common.TEMPLATE_VERSION}'. Finish the upgrade steps in the "
+            "template README, then update templateVersion."
+        )
     return issues
 
 
@@ -361,6 +383,8 @@ def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
     print("Codex Project Ops Doctor")
     print(f"- mode: {args.mode}")
     print(f"- profile: {profile.get('profile', 'unknown')}")
+    profile_version = str(profile.get("templateVersion", "")).strip() or "not recorded"
+    print(f"- templateVersion: profile={profile_version}, harness={codex_common.TEMPLATE_VERSION}")
     print(f"- guardMode: {checks.guard_mode(root)}")
     print(f"- git hooksPath: {_git_hooks_path(root) or 'not configured'}")
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
+import codex_common
 import doctor
 
 
@@ -32,7 +33,14 @@ def _write_ready_files(root: Path):
         encoding="utf-8",
     )
     (root / ".codex" / "project-profile.json").write_text(
-        json.dumps({"projectName": "demo", "guardMode": "soft", "commands": {}}),
+        json.dumps(
+            {
+                "projectName": "demo",
+                "templateVersion": codex_common.TEMPLATE_VERSION,
+                "guardMode": "soft",
+                "commands": {},
+            }
+        ),
         encoding="utf-8",
     )
     (root / ".codex" / "scope-rules.json").write_text(
@@ -56,7 +64,14 @@ def _write_template_files(root: Path):
     )
     (root / "docs" / "COMMANDS.md").write_text("# Commands\n", encoding="utf-8")
     (root / ".codex" / "project-profile.json").write_text(
-        json.dumps({"projectName": "<project-name>", "guardMode": "soft", "commands": {}}),
+        json.dumps(
+            {
+                "projectName": "<project-name>",
+                "templateVersion": codex_common.TEMPLATE_VERSION,
+                "guardMode": "soft",
+                "commands": {},
+            }
+        ),
         encoding="utf-8",
     )
     (root / ".codex" / "scope-rules.json").write_text(
@@ -345,6 +360,65 @@ def test_template_mode_detects_invalid_example_scope_rules(tmp_path, monkeypatch
 
     assert any("`extraForbidden` rules need a non-empty `message`" in issue for issue in issues)
     assert any("`allowedScopeMessages` rule" in issue for issue in issues)
+
+
+def test_instance_mode_detects_missing_template_version(tmp_path, monkeypatch):
+    _write_ready_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: ".githooks")
+    (tmp_path / ".codex" / "project-profile.json").write_text(
+        json.dumps({"projectName": "demo", "guardMode": "soft", "commands": {}}),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "instance")
+
+    assert any("templateVersion is missing" in issue for issue in issues)
+
+
+def test_instance_mode_detects_template_version_mismatch(tmp_path, monkeypatch):
+    _write_ready_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: ".githooks")
+    (tmp_path / ".codex" / "project-profile.json").write_text(
+        json.dumps(
+            {
+                "projectName": "demo",
+                "templateVersion": "1900.01.01",
+                "guardMode": "soft",
+                "commands": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "instance")
+
+    assert any(
+        "templateVersion '1900.01.01' does not match harness TEMPLATE_VERSION" in issue
+        for issue in issues
+    )
+
+
+def test_template_mode_detects_template_version_drift(tmp_path, monkeypatch):
+    _write_template_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: "")
+    (tmp_path / ".codex" / "project-profile.json").write_text(
+        json.dumps(
+            {
+                "projectName": "<project-name>",
+                "templateVersion": "1900.01.01",
+                "guardMode": "soft",
+                "commands": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    assert any(
+        "templateVersion must equal scripts/codex_common.py TEMPLATE_VERSION" in issue
+        for issue in issues
+    )
 
 
 def test_main_requires_explicit_mode():
