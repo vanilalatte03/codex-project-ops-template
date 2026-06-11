@@ -708,6 +708,64 @@ def test_allow_no_checks_skips_grace_wait(tmp_repo, monkeypatch):
     runner._mark_ready_and_merge("https://github.com/org/repo/pull/3")
 
 
+def test_preconditions_block_when_base_checks_fail(runner):
+    runner._git = lambda *args, check=True: cp(stdout="")
+    runner._gh = lambda *args, check=True, timeout=None: cp()
+    runner._run_shell = lambda command, check=True, timeout=None: cp(
+        returncode=1, stdout="FAILED scripts/test_x.py"
+    )
+
+    with pytest.raises(ap.AutopilotError) as exc_info:
+        runner._ensure_preconditions()
+
+    assert "manual 검증이 이미 실패" in str(exc_info.value)
+    assert "--skip-base-checks" in str(exc_info.value)
+    assert "FAILED scripts/test_x.py" in str(exc_info.value)
+
+
+def test_skip_base_checks_bypasses_base_verification(tmp_repo):
+    runner = ap.AutopilotRunner("0-mvp", root=tmp_repo, skip_base_checks=True)
+    runner._git = lambda *args, check=True: cp(stdout="")
+    runner._gh = lambda *args, check=True, timeout=None: cp()
+
+    def fail_shell(command, check=True, timeout=None):
+        raise AssertionError("--skip-base-checks must not run base checks")
+
+    runner._run_shell = fail_shell
+
+    runner._ensure_preconditions()
+
+
+def test_scan_scope_diff_reports_git_diff_failure(runner):
+    runner._git = lambda *args, check=True: cp(
+        returncode=128, stderr="fatal: bad revision 'origin/main...HEAD'"
+    )
+
+    findings = runner._scan_scope_diff({"step": 0, "name": "project-scaffold"})
+
+    assert len(findings) == 1
+    assert "git diff --unified=0" in findings[0]
+    assert "fatal: bad revision" in findings[0]
+
+
+def test_extract_url_strips_trailing_paren_and_falls_back_to_empty():
+    assert (
+        ap.AutopilotRunner._extract_url("PR created (https://github.com/org/repo/pull/7)")
+        == "https://github.com/org/repo/pull/7"
+    )
+    assert ap.AutopilotRunner._extract_url("no url in this output\n") == ""
+
+
+def test_main_returns_130_on_keyboard_interrupt(monkeypatch, capsys):
+    def fake_run(self):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(ap.AutopilotRunner, "run", fake_run)
+
+    assert ap.main(["0-mvp", "--base", "main"]) == 130
+    assert "사용자 중단" in capsys.readouterr().err
+
+
 def test_detect_default_base_uses_origin_head(tmp_path, monkeypatch):
     def fake_run(cmd, cwd, capture_output, text, timeout):
         assert cmd == ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]

@@ -45,6 +45,7 @@ autopilot 운영 안전장치:
 - `--dry-run`은 실행 없이 pending step과 브랜치 계획만 출력한다.
 - `--max-steps N`은 한 번의 실행에서 최대 N개의 step PR만 병합하고 멈춘다.
 - 동시 실행은 `.codex/autopilot.lock`으로 차단한다(stale lock은 자동 회수).
+- 루프 시작 전에 base 브랜치에서 `checks.py --stage manual`을 실행해 base가 이미 깨진 상태면 fail-fast 한다. 의도된 상태라면 `--skip-base-checks`로 생략한다.
 - step 문서의 인수 기준 명령은 실행 전에 `guard.py` 위험 명령 정책을 통과해야 한다.
 - `execute.py`는 Codex의 completed 보고 후에도 인수 기준을 직접 재실행한다.
 - PR은 `gh pr checks --watch`로 원격 체크 통과를 확인한 뒤에만 squash merge한다.

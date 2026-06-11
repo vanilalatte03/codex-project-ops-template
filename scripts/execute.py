@@ -226,7 +226,7 @@ class StepExecutor:
 
         self._stage_existing_paths(output_rel, index_rel)
         if self._run_git("diff", "--cached", "--quiet").returncode != 0:
-            msg = self.CHORE_MSG.format(phase=self._phase_name, num=step_num, name=step_name)
+            msg = self.CHORE_MSG.format(phase=self._phase_name, num=step_num)
             r = self._run_git("commit", "-m", msg)
             if r.returncode != 0:
                 print(f"  WARN: housekeeping 커밋 실패: {r.stderr.strip()}")

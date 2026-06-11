@@ -191,6 +191,7 @@ python scripts/execute.py {phase-name} --next-step-only
 - `git remote get-url origin`이 성공함
 - `gh auth status`가 성공함
 - base branch가 `origin`과 fast-forward 동기화 가능한 상태임
+- base 브랜치에서 `python scripts/checks.py --stage manual`이 통과함 (의도적으로 생략하려면 `--skip-base-checks`)
 
 4. 사전 조건을 만족하면 autopilot을 실행합니다.
 
