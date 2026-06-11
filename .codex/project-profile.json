@@ -1,5 +1,6 @@
 {
   "projectName": "<project-name>",
+  "templateVersion": "2026.06.11",
   "profile": "mixed",
   "guardMode": "soft",
   "commands": {

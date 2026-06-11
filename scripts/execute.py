@@ -226,7 +226,7 @@ class StepExecutor:
 
         self._stage_existing_paths(output_rel, index_rel)
         if self._run_git("diff", "--cached", "--quiet").returncode != 0:
-            msg = self.CHORE_MSG.format(phase=self._phase_name, num=step_num, name=step_name)
+            msg = self.CHORE_MSG.format(phase=self._phase_name, num=step_num)
             r = self._run_git("commit", "-m", msg)
             if r.returncode != 0:
                 print(f"  WARN: housekeeping 커밋 실패: {r.stderr.strip()}")
@@ -262,6 +262,10 @@ class StepExecutor:
                 f"{phase_readme.read_text(encoding='utf-8')}"
             )
 
+        # 첨부 문서 선택 우선순위:
+        # 1. .codex/project-profile.json의 guardrailDocs (명시 고정 목록)
+        # 2. phase README/step 문서가 참조하는 docs/*.md만 (기본 — 프롬프트 크기 통제)
+        # 3. 참조가 하나도 없으면 docs 전체 (안전 fallback)
         profile_docs = checks.load_project_profile(ROOT).get("guardrailDocs")
         if isinstance(profile_docs, list) and profile_docs:
             for rel in profile_docs:
@@ -388,6 +392,7 @@ class StepExecutor:
         cmd = codex_base_cmd(self._codex_effort)
         if self._unsafe:
             cmd.append("--dangerously-bypass-approvals-and-sandbox")
+        # 프롬프트는 argv 대신 stdin으로 전달해서 ARG_MAX 한계를 피한다.
         cmd.append("-")
         try:
             result = subprocess.run(
@@ -491,6 +496,7 @@ class StepExecutor:
 
             ac_error = None
             if status == "completed":
+                # codex의 completed 자가 보고를 믿지 않고 인수 기준을 직접 재실행한다.
                 ac_error = self._verify_acceptance(step_num)
                 if ac_error is None:
                     for s in index["steps"]:
@@ -521,6 +527,8 @@ class StepExecutor:
                 )
 
             if attempt < self.MAX_RETRIES:
+                # 실패한 시도의 변경 파일은 의도적으로 남겨둔다.
+                # 다음 시도의 codex가 prev_error와 함께 이어서 자가 교정하는 흐름이다.
                 for s in index["steps"]:
                     if s["step"] == step_num:
                         s["status"] = "pending"
@@ -608,6 +616,7 @@ class StepExecutor:
             return None
         print(f"  AC 재검증: {len(commands)}개 명령 실행")
         for command in commands:
+            # step 문서는 codex가 수정할 수 있으므로 위험 명령 정책을 먼저 통과해야 한다.
             danger = guard.danger_reason(command)
             if danger:
                 return f"인수 기준 명령이 위험 명령 정책에 차단되었습니다: {danger}"

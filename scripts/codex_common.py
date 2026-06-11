@@ -7,6 +7,15 @@ import shutil
 import sys
 from pathlib import Path
 
+# 이 harness 묶음(scripts/, .agents/, .githooks/, .codex 계약 파일)의 버전.
+# harness 동작이 바뀌는 커밋에서 함께 올린다. 상수를 scripts/에 두는 이유:
+# 인스턴스가 업그레이드로 scripts/를 통째로 덮어쓰면 설치된 harness 버전이
+# 자동으로 따라온다. 인스턴스는 마지막으로 동기화한 버전을
+# .codex/project-profile.json `templateVersion`에 기록하고, doctor가 둘을
+# 비교해 "harness 파일과 동기화 기록이 어긋난 상태"를 잡는다.
+# 업그레이드 절차는 템플릿 README의 "Harness 버전과 업그레이드"를 따른다.
+TEMPLATE_VERSION = "2026.06.11"
+
 ALLOWED_CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 CODEX_EXEC_TIMEOUT = 1800
 CODEX_ENV_CONFIG = "shell_environment_policy.inherit=all"

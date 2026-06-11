@@ -1,10 +1,12 @@
 import json
+import shutil
 import sys
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
+import codex_common
 import doctor
 
 
@@ -31,7 +33,14 @@ def _write_ready_files(root: Path):
         encoding="utf-8",
     )
     (root / ".codex" / "project-profile.json").write_text(
-        json.dumps({"projectName": "demo", "guardMode": "soft", "commands": {}}),
+        json.dumps(
+            {
+                "projectName": "demo",
+                "templateVersion": codex_common.TEMPLATE_VERSION,
+                "guardMode": "soft",
+                "commands": {},
+            }
+        ),
         encoding="utf-8",
     )
     (root / ".codex" / "scope-rules.json").write_text(
@@ -55,7 +64,14 @@ def _write_template_files(root: Path):
     )
     (root / "docs" / "COMMANDS.md").write_text("# Commands\n", encoding="utf-8")
     (root / ".codex" / "project-profile.json").write_text(
-        json.dumps({"projectName": "<project-name>", "guardMode": "soft", "commands": {}}),
+        json.dumps(
+            {
+                "projectName": "<project-name>",
+                "templateVersion": codex_common.TEMPLATE_VERSION,
+                "guardMode": "soft",
+                "commands": {},
+            }
+        ),
         encoding="utf-8",
     )
     (root / ".codex" / "scope-rules.json").write_text(
@@ -63,6 +79,69 @@ def _write_template_files(root: Path):
         encoding="utf-8",
     )
     _write_cross_platform_hook_contract(root)
+    _write_example_phase(root)
+
+
+def _write_example_phase(root: Path):
+    phase_dir = root / "phases" / "0-example"
+    phase_dir.mkdir(parents=True, exist_ok=True)
+    (phase_dir / "README.md").write_text(
+        "# Phase: 0-example\n\n## 목표\n- 예시 목표\n\n## 완료 기준\n- 예시 기준\n",
+        encoding="utf-8",
+    )
+    (phase_dir / "index.json").write_text(
+        json.dumps(
+            {
+                "project": "<프로젝트명>",
+                "phase": "0-example",
+                "steps": [{"step": 0, "name": "project-setup", "status": "pending"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (phase_dir / "step0.md").write_text(
+        "\n".join(
+            [
+                "# 단계 0: project-setup",
+                "",
+                "## 작업",
+                "예시 작업을 수행한다.",
+                "",
+                "## 인수 기준",
+                "",
+                "```bash",
+                "python scripts/checks.py --stage manual",
+                "```",
+                "",
+                "## 금지사항",
+                "- 범위 밖 기능을 추가하지 마라.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (phase_dir / "docs-checks.json").write_text(
+        json.dumps(
+            {
+                "paths": ["phases/0-example"],
+                "required": [{"name": "goal", "pattern": "^## 목표$"}],
+                "finalRequired": [{"name": "done", "pattern": "^## 완료 기준$"}],
+                "forbidden": [{"name": "stale", "pattern": "deprecated-example-api"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (phase_dir / "scope-rules.json").write_text(
+        json.dumps(
+            {
+                "extraForbidden": [{"message": "범위 밖 기능", "anyLowered": ["sync-service"]}],
+                "allowedScopeMessages": [{"message": "범위 밖 기능", "steps": [0]}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
 
 def _write_cross_platform_hook_contract(root: Path):
@@ -208,6 +287,138 @@ def test_template_mode_detects_missing_line_ending_policy(tmp_path):
     issues = doctor.collect_issues(tmp_path, "template")
 
     assert any(".githooks/* text eol=lf" in issue for issue in issues)
+
+
+def test_template_mode_detects_missing_example_phase(tmp_path, monkeypatch):
+    _write_template_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: "")
+    shutil.rmtree(tmp_path / "phases" / "0-example")
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    assert "phases/0-example/ example phase is missing." in issues
+
+
+def test_template_mode_detects_example_index_schema_violations(tmp_path, monkeypatch):
+    _write_template_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: "")
+    (tmp_path / "phases" / "0-example" / "index.json").write_text(
+        json.dumps(
+            {
+                "project": "<프로젝트명>",
+                "phase": "wrong-name",
+                "steps": [{"step": 1, "name": "missing-step-file", "status": "running"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    assert any("`phase` must match the directory name" in issue for issue in issues)
+    assert any("step 1 status must be one of" in issue for issue in issues)
+    assert "phases/0-example/step1.md is missing." in issues
+
+
+def test_template_mode_detects_example_step_without_acceptance_commands(tmp_path, monkeypatch):
+    _write_template_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: "")
+    (tmp_path / "phases" / "0-example" / "step0.md").write_text(
+        "# 단계 0\n\n## 작업\n예시\n\n## 인수 기준\n없음\n\n## 금지사항\n- 없음\n",
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    assert any("must contain fenced shell commands" in issue for issue in issues)
+
+
+def test_template_mode_requires_example_rules_for_each_docs_check_type(tmp_path, monkeypatch):
+    _write_template_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: "")
+    (tmp_path / "phases" / "0-example" / "docs-checks.json").write_text(
+        json.dumps({"paths": ["phases/0-example"], "required": [], "finalRequired": [], "forbidden": []}),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    for key in ("required", "finalRequired", "forbidden"):
+        assert any(f"`{key}` rule" in issue for issue in issues)
+
+
+def test_template_mode_detects_invalid_example_scope_rules(tmp_path, monkeypatch):
+    _write_template_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: "")
+    (tmp_path / "phases" / "0-example" / "scope-rules.json").write_text(
+        json.dumps({"extraForbidden": [{"anyLowered": ["sync"]}], "allowedScopeMessages": []}),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    assert any("`extraForbidden` rules need a non-empty `message`" in issue for issue in issues)
+    assert any("`allowedScopeMessages` rule" in issue for issue in issues)
+
+
+def test_instance_mode_detects_missing_template_version(tmp_path, monkeypatch):
+    _write_ready_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: ".githooks")
+    (tmp_path / ".codex" / "project-profile.json").write_text(
+        json.dumps({"projectName": "demo", "guardMode": "soft", "commands": {}}),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "instance")
+
+    assert any("templateVersion is missing" in issue for issue in issues)
+
+
+def test_instance_mode_detects_template_version_mismatch(tmp_path, monkeypatch):
+    _write_ready_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: ".githooks")
+    (tmp_path / ".codex" / "project-profile.json").write_text(
+        json.dumps(
+            {
+                "projectName": "demo",
+                "templateVersion": "1900.01.01",
+                "guardMode": "soft",
+                "commands": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "instance")
+
+    assert any(
+        "templateVersion '1900.01.01' does not match harness TEMPLATE_VERSION" in issue
+        for issue in issues
+    )
+
+
+def test_template_mode_detects_template_version_drift(tmp_path, monkeypatch):
+    _write_template_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: "")
+    (tmp_path / ".codex" / "project-profile.json").write_text(
+        json.dumps(
+            {
+                "projectName": "<project-name>",
+                "templateVersion": "1900.01.01",
+                "guardMode": "soft",
+                "commands": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    assert any(
+        "templateVersion must equal scripts/codex_common.py TEMPLATE_VERSION" in issue
+        for issue in issues
+    )
 
 
 def test_main_requires_explicit_mode():

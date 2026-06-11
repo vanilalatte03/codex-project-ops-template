@@ -2,6 +2,10 @@
 
 Harness phase 파일은 프로젝트별 MVP 작업을 작은 step으로 나눠 실행하기 위한 템플릿입니다.
 
+형식이 채워진 참고용 예시는 `0-example/`에 있습니다. 실행 대상이 아니라 형식
+레퍼런스이며, `python scripts/doctor.py --template`이 예시의 스키마를 검증합니다.
+실제 phase를 만들 때 예시를 복사해 시작해도 됩니다.
+
 새 phase는 아래 구조로 만듭니다.
 
 ```text

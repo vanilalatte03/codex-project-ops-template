@@ -36,6 +36,8 @@ DEFAULT_FIX_EFFORT = "medium"
 DEFAULT_GIT_TIMEOUT = 600
 DEFAULT_GH_TIMEOUT = 600
 PR_CHECKS_TIMEOUT = 3600
+# ready 직후에는 CI가 체크 런을 아직 만들지 못해 "no checks reported"가
+# 일시적으로 나올 수 있다. grace 동안 재확인한 뒤에만 체크 없음으로 판단한다.
 NO_CHECKS_GRACE_SECONDS = 60
 NO_CHECKS_POLL_SECONDS = 15
 SCOPE_RULES_FILENAME = "scope-rules.json"
@@ -152,6 +154,8 @@ def _dedupe(items: list[str]) -> list[str]:
 class AutopilotRunner:
     """Coordinates a Harness phase as a sequence of small reviewed PRs."""
 
+    # 테스트 fixture가 금지 키워드 문자열을 포함하는 파일들. 스캐너 코드 자체는
+    # 키워드를 갖지 않으므로 (.codex/scope-rules.json으로 외부화) 제외하지 않는다.
     FORBIDDEN_SCAN_EXCLUDED_PATHS = (
         "scripts/test_autopilot.py",
         "scripts/test_checks.py",
@@ -176,6 +180,7 @@ class AutopilotRunner:
         dry_run: bool = False,
         max_steps: int | None = None,
         allow_no_checks: bool = False,
+        skip_base_checks: bool = False,
         root: Path = ROOT,
     ):
         self.phase = phase
@@ -189,6 +194,7 @@ class AutopilotRunner:
         self.dry_run = dry_run
         self.max_steps = max_steps
         self.allow_no_checks = allow_no_checks
+        self.skip_base_checks = skip_base_checks
         self.root = Path(root)
         self._scope_rules_cache: dict | None = None
         self._global_scope_rules_cache: dict | None = None
@@ -400,6 +406,19 @@ class AutopilotRunner:
         self._gh("auth", "status")
         self._git("remote", "get-url", "origin")
         self._sync_base()
+        if not self.skip_base_checks:
+            self._ensure_base_checks_pass()
+
+    def _ensure_base_checks_pass(self):
+        # base가 이미 깨져 있으면 첫 step PR의 리뷰 gate가 step 실패처럼 보이는
+        # 오인을 만든다. 루프 시작 전에 base에서 같은 검증을 돌려 fail-fast 한다.
+        result = self._run_shell(FALLBACK_REVIEW_CHECK_COMMAND, check=False, timeout=CODEX_EXEC_TIMEOUT)
+        if result.returncode != 0:
+            raise AutopilotError(
+                f"base 브랜치 `{self.base}`의 manual 검증이 이미 실패해서 자동 PR 루프를 시작하지 않습니다. "
+                "base를 먼저 고치거나, 의도된 상태라면 --skip-base-checks로 이 검증을 생략할 수 있습니다.\n"
+                + self._shell_command_failure(FALLBACK_REVIEW_CHECK_COMMAND, result)
+            )
 
     def _sync_base(self):
         self._git("fetch", "origin", self.base)
@@ -579,6 +598,8 @@ class AutopilotRunner:
                     f"PR: {pr_url}\n"
                     f"{self._compact_output(output) or f'exit {result.returncode}'}"
                 )
+            # "no checks reported"는 CI가 없는 저장소뿐 아니라 ready 직후
+            # 체크 런 생성 전의 레이스에서도 나온다. grace 동안 재확인한다.
             if self.allow_no_checks:
                 return
             if time.monotonic() >= deadline:
@@ -607,6 +628,8 @@ class AutopilotRunner:
         checks_passed = True
         diff_passed = True
         for command in commands:
+            # step 문서는 codex가 수정할 수 있는 입력이므로,
+            # 인수 기준 명령도 실행 전에 위험 명령 정책을 통과해야 한다.
             danger = guard.danger_reason(command)
             if danger:
                 checks_passed = False
@@ -658,9 +681,12 @@ class AutopilotRunner:
     # --- scope rules ---
 
     def _scan_scope_diff(self, step: dict | None = None) -> list[str]:
-        result = self._git("diff", "--unified=0", f"origin/{self.base}...HEAD", check=False)
+        diff_cmd = ["git", "diff", "--unified=0", f"origin/{self.base}...HEAD"]
+        result = self._git(*diff_cmd[1:], check=False)
         if result.returncode != 0:
-            return []
+            # diff 실패를 빈 finding으로 돌리면 scope gate가 검사 없이 통과한다.
+            # 실패 자체를 finding으로 보고해 gate를 막는다.
+            return [self._command_failure(diff_cmd, result)]
 
         findings: list[str] = []
         current_file = ""
@@ -732,6 +758,7 @@ class AutopilotRunner:
         ]
 
     def _scope_rules(self) -> dict:
+        """phases/<phase>/scope-rules.json — phase별 금지/허용 규칙."""
         if self._scope_rules_cache is None:
             self._scope_rules_cache = self._load_scope_rules_file(
                 self.root / "phases" / self.phase / SCOPE_RULES_FILENAME
@@ -739,6 +766,7 @@ class AutopilotRunner:
         return self._scope_rules_cache
 
     def _global_scope_rules(self) -> dict:
+        """.codex/scope-rules.json — 모든 phase에 적용되는 금지 규칙."""
         if self._global_scope_rules_cache is None:
             self._global_scope_rules_cache = self._load_scope_rules_file(
                 self.root / ".codex" / SCOPE_RULES_FILENAME
@@ -802,6 +830,7 @@ class AutopilotRunner:
         normalized = path.replace("\\", "/")
         return (
             normalized in self.FORBIDDEN_SCAN_EXCLUDED_PATHS
+            # scope-rules.json은 정의상 금지 키워드를 담으므로 스캔에서 제외한다.
             or Path(normalized).name == SCOPE_RULES_FILENAME
             or any(normalized.startswith(prefix) for prefix in self.FORBIDDEN_SCAN_EXCLUDED_PREFIXES)
             or self.STEP_OUTPUT_RE.match(normalized) is not None
@@ -912,15 +941,6 @@ class AutopilotRunner:
             return f"<git status failed: {self._compact_output(result.stderr.strip())}>"
         return result.stdout.strip()
 
-    def _parse_last_message_file(self, path: str) -> ReviewResult | None:
-        try:
-            content = Path(path).read_text(encoding="utf-8")
-        except OSError:
-            return None
-        if not content:
-            return None
-        return self._review_from_text(content)
-
     def _codex_review_prompt(self, step: dict) -> str:
         step_num = step.get("step", "?")
         step_name = step.get("name", "unknown")
@@ -944,6 +964,12 @@ class AutopilotRunner:
         )
 
     def _parse_review_result(self, stdout: str) -> ReviewResult | None:
+        """codex exec --json JSONL 스트림에서 마지막 agent 메시지의 JSON 결과를 읽는다.
+
+        `--output-last-message` 파일이 우선이고, 이 파서는 그 fallback이다.
+        알려진 이벤트 형태(item/message/msg 노드의 text·message·content[].text)만
+        본다. 임의 키 재귀 탐색은 하지 않는다.
+        """
         result: ReviewResult | None = None
         for raw in stdout.splitlines():
             line = raw.strip()
@@ -962,6 +988,7 @@ class AutopilotRunner:
                 result = parsed
         if result is not None:
             return result
+        # JSONL이 아닌 단일(또는 pretty-printed) JSON 출력 fallback.
         return self._review_from_text(stdout)
 
     @staticmethod
@@ -1122,6 +1149,7 @@ class AutopilotRunner:
             "수정 후 가능한 검증을 실행하고, 수정한 파일은 working tree에 남겨두세요."
         )
         cmd = codex_base_cmd(self.fix_effort)
+        # 프롬프트는 argv 대신 stdin으로 전달해서 ARG_MAX 한계를 피한다.
         cmd.append("-")
         self._run(cmd, timeout=CODEX_EXEC_TIMEOUT, input_text=prompt)
 
@@ -1173,7 +1201,8 @@ class AutopilotRunner:
     @staticmethod
     def _extract_url(output: str) -> str:
         match = re.search(r"https?://\S+", output)
-        return match.group(0) if match else output.strip()
+        # gh 출력이 URL을 괄호/마크다운으로 감쌀 수 있어 trailing `)`를 제거한다.
+        return match.group(0).rstrip(")") if match else ""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1194,6 +1223,11 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-no-checks",
         action="store_true",
         help="Do not wait through the no-checks grace period for repositories without CI checks",
+    )
+    parser.add_argument(
+        "--skip-base-checks",
+        action="store_true",
+        help="Skip the base-branch manual check verification before starting the PR loop",
     )
     parser.add_argument(
         "--step-effort",
@@ -1242,10 +1276,14 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             max_steps=args.max_steps,
             allow_no_checks=args.allow_no_checks,
+            skip_base_checks=args.skip_base_checks,
         ).run()
     except AutopilotError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("ERROR: 사용자 중단으로 종료합니다.", file=sys.stderr)
+        return 130
 
     print(f"Autopilot completed: {pr_urls}")
     return 0

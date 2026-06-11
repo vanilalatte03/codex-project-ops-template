@@ -241,10 +241,14 @@ def check_names_for_stage(stage: str, root: Path = ROOT) -> tuple[str, ...]:
     if stage == "final":
         default = CHECK_NAMES
     elif stage == "stop":
+        # stop 훅은 에이전트가 멈출 때마다 실행되므로 기본은 lint만 돌린다.
+        # test/build까지 돌리려면 stageChecks로 명시적으로 확장한다.
         default = STOP_STAGE_CHECK_NAMES
     else:
         default = BASE_CHECK_NAMES
 
+    # Per-stage overrides keep heavy stages (e.g. stop hooks) configurable:
+    # .codex/project-profile.json -> {"stageChecks": {"stop": ["lint"]}}
     stage_checks = load_project_profile(root).get("stageChecks")
     if not isinstance(stage_checks, dict):
         return default
@@ -264,6 +268,8 @@ def collect_checks(root: Path = ROOT, stage: str = "manual") -> list[CheckComman
     merged: dict[str, list[CheckCommand]] = {}
     for provider in (commands_from_profile, commands_from_docs, detect_commands):
         for name, commands in provider(root).items():
+            # First provider that defines a check name wins for that name only,
+            # so a profile that pins `test` does not silence docs/detected `build`.
             merged.setdefault(name, commands)
     return _flatten(merged, names)
 
@@ -490,6 +496,7 @@ def run_checks(
         print(f"$ {check.command}  # {check.name}, {check.source}")
         sys.stdout.flush()
         try:
+            # Stream output directly so long builds show live progress.
             result = subprocess.run(check.command, cwd=root, shell=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             print(f"Command timed out after {timeout}s: {check.command}", file=sys.stderr)
@@ -533,7 +540,13 @@ def main(argv: list[str] | None = None) -> int:
             print("No lint/test/build commands configured or detected.")
         return 0
     require_required = args.stage in {"manual", "pre-commit", "final"}
-    return run_checks(checks, ROOT, timeout=args.timeout, require_required=require_required)
+    exit_code = run_checks(checks, ROOT, timeout=args.timeout, require_required=require_required)
+    if exit_code == 0 and args.stage == "final":
+        # final gate는 docs-check 명령 등록 여부와 무관하게 phase 문서 정합성
+        # (finalRequired 포함)을 내장 실행한다. COMMANDS.md의 docs-check 행
+        # 등록에 의존하면 기본 인스턴스에서 finalRequired가 검사 없이 통과한다.
+        return run_docs_checks(ROOT, args.docs_check_config, include_final_rules=True)
+    return exit_code
 
 
 if __name__ == "__main__":

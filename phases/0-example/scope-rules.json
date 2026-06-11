@@ -1,0 +1,15 @@
+{
+  "extraForbidden": [
+    {
+      "message": "예시 phase 제외 범위(원격 동기화)가 추가되었습니다.",
+      "anyLowered": ["sync-service", "remote-sync"]
+    }
+  ],
+  "allowedScopeMessages": [
+    {
+      "message": "예시 phase 제외 범위(원격 동기화)가 추가되었습니다.",
+      "steps": [1],
+      "requiresAnyLowered": ["제외 범위"]
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 import checks
+import codex_common
 
 ROOT = Path(__file__).resolve().parent.parent
 REQUIRED_FILES = [
@@ -18,6 +19,7 @@ REQUIRED_FILES = [
     "docs/ARCHITECTURE.md",
     "docs/ADR.md",
     "docs/COMMANDS.md",
+    "docs/SCOPE_CHANGE_CHECKLIST.md",
     ".codex/config.toml",
     ".codex/hooks.json",
     ".codex/project-profile.json",
@@ -29,6 +31,7 @@ REQUIRED_FILES = [
     "phases/README.md",
     "phases/index.json",
     "issues/README.md",
+    "archive/README.md",
     "scripts/execute.py",
     "scripts/autopilot.py",
     "scripts/checks.py",
@@ -47,6 +50,16 @@ PLACEHOLDER_FILES = [
 PLACEHOLDER_PATTERN = re.compile(r"<[^>\n]+>|TODO|TBD")
 MODES = ("template", "instance")
 LEGACY_HOOK_MARKERS = ("/bin/bash", "/usr/bin/python3", "$(git rev-parse")
+# phase 파일 형식의 살아있는 예시. SKILL.md 산문과 달리 스키마가 깨지면
+# template 모드 doctor(및 CI)가 잡아내므로, 형식 변경 시 예시도 함께 갱신된다.
+EXAMPLE_PHASE_DIR = "phases/0-example"
+EXAMPLE_PHASE_FILES = (
+    "README.md",
+    "index.json",
+    "docs-checks.json",
+    "scope-rules.json",
+)
+VALID_STEP_STATUSES = {"pending", "completed", "error", "blocked"}
 
 
 def _status(ok: bool) -> str:
@@ -93,12 +106,34 @@ def _profile_issues(root: Path, mode: str) -> list[str]:
         return [f".codex/project-profile.json is not valid JSON: {exc}"]
 
     issues: list[str] = []
+    version = str(profile.get("templateVersion", "")).strip()
     if mode == "template":
+        # 템플릿 repo에서는 profile의 templateVersion과 harness 상수가 같아야
+        # 복사된 인스턴스가 일치한 상태로 시작한다. 한쪽만 올리는 실수를 CI가 잡는다.
+        if version != codex_common.TEMPLATE_VERSION:
+            issues.append(
+                ".codex/project-profile.json templateVersion must equal "
+                f"scripts/codex_common.py TEMPLATE_VERSION ({codex_common.TEMPLATE_VERSION})."
+            )
         return issues
 
     project_name = str(profile.get("projectName", "")).strip()
     if not project_name or _is_placeholder(project_name):
         issues.append(".codex/project-profile.json projectName still has a placeholder value.")
+
+    # 설치된 harness 버전(scripts/와 함께 덮어써지는 상수)과 인스턴스의 동기화
+    # 기록이 어긋나면 업그레이드가 절반만 끝난 상태다.
+    if not version:
+        issues.append(
+            ".codex/project-profile.json templateVersion is missing. Record the template "
+            f"version this instance is synced to (installed harness: {codex_common.TEMPLATE_VERSION})."
+        )
+    elif version != codex_common.TEMPLATE_VERSION:
+        issues.append(
+            f".codex/project-profile.json templateVersion '{version}' does not match harness "
+            f"TEMPLATE_VERSION '{codex_common.TEMPLATE_VERSION}'. Finish the upgrade steps in the "
+            "template README, then update templateVersion."
+        )
     return issues
 
 
@@ -152,6 +187,133 @@ def _template_contract_issues(root: Path) -> list[str]:
                 issues.append(".codex/scope-rules.json must contain a JSON object.")
             elif "forbidden" in payload and not isinstance(payload["forbidden"], list):
                 issues.append(".codex/scope-rules.json `forbidden` must be a list.")
+
+    issues.extend(_example_phase_issues(root))
+    return issues
+
+
+def _example_phase_issues(root: Path) -> list[str]:
+    phase_dir = root / EXAMPLE_PHASE_DIR
+    if not phase_dir.is_dir():
+        return [f"{EXAMPLE_PHASE_DIR}/ example phase is missing."]
+
+    issues: list[str] = []
+    for rel in EXAMPLE_PHASE_FILES:
+        if not (phase_dir / rel).exists():
+            issues.append(f"{EXAMPLE_PHASE_DIR}/{rel} is missing.")
+
+    issues.extend(_example_phase_index_issues(phase_dir))
+    issues.extend(_example_docs_checks_issues(root, phase_dir))
+    issues.extend(_example_scope_rules_issues(phase_dir))
+    return issues
+
+
+def _example_phase_index_issues(phase_dir: Path) -> list[str]:
+    path = phase_dir / "index.json"
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"{EXAMPLE_PHASE_DIR}/index.json is not valid JSON: {exc}"]
+    if not isinstance(payload, dict):
+        return [f"{EXAMPLE_PHASE_DIR}/index.json must contain a JSON object."]
+
+    issues: list[str] = []
+    if payload.get("phase") != phase_dir.name:
+        issues.append(f"{EXAMPLE_PHASE_DIR}/index.json `phase` must match the directory name.")
+
+    steps = payload.get("steps")
+    if not isinstance(steps, list) or not steps:
+        issues.append(f"{EXAMPLE_PHASE_DIR}/index.json `steps` must be a non-empty list.")
+        return issues
+
+    for entry in steps:
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("step"), int)
+            or not isinstance(entry.get("name"), str)
+        ):
+            issues.append(
+                f"{EXAMPLE_PHASE_DIR}/index.json steps need an integer `step` and a string `name`."
+            )
+            continue
+        if entry.get("status") not in VALID_STEP_STATUSES:
+            issues.append(
+                f"{EXAMPLE_PHASE_DIR}/index.json step {entry['step']} status must be one of "
+                + ", ".join(sorted(VALID_STEP_STATUSES))
+                + "."
+            )
+        issues.extend(_example_step_file_issues(phase_dir, entry["step"]))
+    return issues
+
+
+def _example_step_file_issues(phase_dir: Path, step_num: int) -> list[str]:
+    step_path = phase_dir / f"step{step_num}.md"
+    if not step_path.exists():
+        return [f"{EXAMPLE_PHASE_DIR}/step{step_num}.md is missing."]
+
+    issues: list[str] = []
+    text = step_path.read_text(encoding="utf-8")
+    for section in ("## 작업", "## 인수 기준", "## 금지사항"):
+        if section not in text:
+            issues.append(f"{EXAMPLE_PHASE_DIR}/step{step_num}.md must contain a `{section}` section.")
+    if not codex_common.read_acceptance_commands(step_path):
+        issues.append(
+            f"{EXAMPLE_PHASE_DIR}/step{step_num}.md `## 인수 기준` must contain fenced shell commands."
+        )
+    return issues
+
+
+def _example_docs_checks_issues(root: Path, phase_dir: Path) -> list[str]:
+    path = phase_dir / "docs-checks.json"
+    if not path.exists():
+        return []
+    try:
+        config = checks.load_docs_check_config(root, config_path=str(path))
+    except ValueError as exc:
+        return [str(exc)]
+
+    issues: list[str] = []
+    if not config.paths:
+        issues.append(f"{EXAMPLE_PHASE_DIR}/docs-checks.json must define top-level `paths`.")
+    for key, rules in (
+        ("required", config.required),
+        ("finalRequired", config.final_required),
+        ("forbidden", config.forbidden),
+    ):
+        if not rules:
+            issues.append(
+                f"{EXAMPLE_PHASE_DIR}/docs-checks.json must demonstrate at least one `{key}` rule."
+            )
+    return issues
+
+
+def _example_scope_rules_issues(phase_dir: Path) -> list[str]:
+    path = phase_dir / "scope-rules.json"
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"{EXAMPLE_PHASE_DIR}/scope-rules.json is not valid JSON: {exc}"]
+    if not isinstance(payload, dict):
+        return [f"{EXAMPLE_PHASE_DIR}/scope-rules.json must contain a JSON object."]
+
+    issues: list[str] = []
+    for key in ("extraForbidden", "allowedScopeMessages"):
+        rules = payload.get(key)
+        if not isinstance(rules, list) or not rules:
+            issues.append(
+                f"{EXAMPLE_PHASE_DIR}/scope-rules.json must demonstrate at least one `{key}` rule."
+            )
+            continue
+        for rule in rules:
+            if not isinstance(rule, dict) or not isinstance(rule.get("message"), str) or not rule["message"]:
+                issues.append(
+                    f"{EXAMPLE_PHASE_DIR}/scope-rules.json `{key}` rules need a non-empty `message`."
+                )
+                break
     return issues
 
 
@@ -221,6 +383,8 @@ def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
     print("Codex Project Ops Doctor")
     print(f"- mode: {args.mode}")
     print(f"- profile: {profile.get('profile', 'unknown')}")
+    profile_version = str(profile.get("templateVersion", "")).strip() or "not recorded"
+    print(f"- templateVersion: profile={profile_version}, harness={codex_common.TEMPLATE_VERSION}")
     print(f"- guardMode: {checks.guard_mode(root)}")
     print(f"- git hooksPath: {_git_hooks_path(root) or 'not configured'}")
 

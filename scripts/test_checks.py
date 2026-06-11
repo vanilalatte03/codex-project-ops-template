@@ -238,6 +238,63 @@ def test_docs_check_required_forbidden_and_final_rules(tmp_path, capsys):
     assert checks.run_docs_checks(tmp_path, str(config), include_final_rules=True) == 0
 
 
+def _write_final_stage_repo(tmp_path):
+    codex = tmp_path / ".codex"
+    codex.mkdir()
+    (codex / "project-profile.json").write_text(
+        json.dumps({"commands": {"test": ["echo test ok"], "build": ["echo build ok"]}}),
+        encoding="utf-8",
+    )
+    phase = tmp_path / "phases" / "1-mvp"
+    phase.mkdir(parents=True)
+    (tmp_path / "phases" / "index.json").write_text(
+        json.dumps({"phases": [{"dir": "1-mvp", "status": "pending"}]}),
+        encoding="utf-8",
+    )
+    (phase / "docs-checks.json").write_text(
+        json.dumps(
+            {
+                "paths": ["docs"],
+                "required": [{"name": "ready marker", "pattern": "READY"}],
+                "finalRequired": [{"name": "qa marker", "pattern": "QA_PASS"}],
+                "forbidden": [{"name": "stale marker", "pattern": "DO_NOT_SHIP"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PRD.md").write_text("READY\n", encoding="utf-8")
+
+
+def test_final_stage_fails_when_final_required_docs_rule_is_missing(tmp_path, monkeypatch, capsys):
+    _write_final_stage_repo(tmp_path)
+    monkeypatch.setattr(checks, "ROOT", tmp_path)
+
+    status = checks.main(["--stage", "final"])
+
+    assert status == 1
+    assert "Missing required docs marker: qa marker" in capsys.readouterr().err
+
+
+def test_final_stage_passes_when_final_required_docs_rule_is_satisfied(tmp_path, monkeypatch, capsys):
+    _write_final_stage_repo(tmp_path)
+    (tmp_path / "docs" / "QA.md").write_text("QA_PASS\n", encoding="utf-8")
+    monkeypatch.setattr(checks, "ROOT", tmp_path)
+
+    status = checks.main(["--stage", "final"])
+
+    assert status == 0
+    assert "docs-check passed" in capsys.readouterr().out
+
+
+def test_manual_stage_does_not_run_final_docs_rules(tmp_path, monkeypatch):
+    _write_final_stage_repo(tmp_path)
+    monkeypatch.setattr(checks, "ROOT", tmp_path)
+
+    assert checks.main(["--stage", "manual"]) == 0
+
+
 def test_discover_docs_check_config_prefers_active_phase(tmp_path):
     phase4 = tmp_path / "phases" / "4-old"
     phase5 = tmp_path / "phases" / "5-current"

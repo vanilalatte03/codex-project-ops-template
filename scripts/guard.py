@@ -44,6 +44,9 @@ SKIP_NAMES = {
     "uv.lock",
     "yarn.lock",
 }
+# Best-effort filter: it blocks obvious dangerous forms but cannot catch every
+# shell indirection (variables, eval, command substitution). Treat it as a
+# safety net, not a security boundary.
 DANGEROUS_RULES = [
     (
         re.compile(
@@ -90,6 +93,7 @@ def danger_reason(command: str) -> str | None:
     return None
 
 
+# Backwards-compatible alias for existing callers.
 _danger_reason = danger_reason
 
 
