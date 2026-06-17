@@ -47,15 +47,30 @@
 
 ## 업그레이드 절차
 
+`scripts/upgrade.py`가 위 표의 템플릿 소유 단위 복사와 `templateVersion` 갱신을
+대신합니다. 단, 계약 변화의 영향 검토(1번)와 검증(5번)은 사람이 합니다.
+
 1. 인스턴스 `.codex/project-profile.json`의 `templateVersion`과 템플릿 repo의
-   현재 `TEMPLATE_VERSION`을 비교하고, 그 사이의 템플릿 커밋 로그에서 계약
-   변화(hook 설정, profile 키 추가, phase 파일 형식 변경 등)를 확인합니다.
-2. 위 표의 템플릿 소유 단위를 템플릿에서 통째로 복사해 덮어씁니다.
+   현재 `TEMPLATE_VERSION`을 비교하고, 그 사이의 계약 변화(hook 설정, profile 키
+   추가, phase 파일 형식 변경 등)를 템플릿 `CHANGELOG.md`에서 확인합니다.
+2. 템플릿 체크아웃을 받아 인스턴스 루트에서 업그레이드를 실행합니다. 먼저
+   `--dry-run`으로 덮어쓸 단위를 확인한 뒤 적용합니다. 이 스크립트가 표의 템플릿
+   소유 단위를 통째로 덮어쓰고, 4번의 `templateVersion` 갱신까지 처리합니다.
+
+   ```bash
+   python scripts/upgrade.py --from <template-checkout> --dry-run
+   python scripts/upgrade.py --from <template-checkout>
+   ```
+
 3. 1번에서 확인한 계약 변화가 프로젝트 소유 파일에 영향을 주면 수동으로
    반영합니다.
-4. `.codex/project-profile.json`의 `templateVersion`을 새 버전으로 갱신합니다.
+4. (스크립트가 처리) `.codex/project-profile.json`의 `templateVersion`이 새
+   버전으로 갱신됐는지 확인합니다.
 5. `python -m pytest scripts`와 `python scripts/doctor.py --instance`가 통과하는지
    확인합니다.
+
+수동으로 복사하려면 위 "파일 소유 구분" 표를 그대로 따르고, 마지막에
+`templateVersion`을 직접 갱신합니다.
 
 ## 템플릿 repo에서 버전 올리기
 

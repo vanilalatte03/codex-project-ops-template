@@ -41,6 +41,7 @@ REQUIRED_FILES = [
     "scripts/codex_common.py",
     "scripts/doctor.py",
     "scripts/guard.py",
+    "scripts/upgrade.py",
 ]
 TEMPLATE_REQUIRED_FILES = [
     ".github/workflows/template-ci.yml",
