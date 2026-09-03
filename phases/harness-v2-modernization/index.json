@@ -1,0 +1,23 @@
+{
+  "project": "codex-project-ops-template",
+  "phase": "harness-v2-modernization",
+  "steps": [
+    {
+      "step": 0,
+      "name": "baseline-and-metrics",
+      "status": "completed",
+      "completed_at": "2026-09-03T15:40:23Z",
+      "summary": "Harness v1 기준선, 대표 eval 지표, #14~#23 실행 순서와 호환·rollback 계약을 고정했다."
+    },
+    { "step": 1, "name": "minimize-environment-inheritance", "status": "pending" },
+    { "step": 2, "name": "progressive-guardrails", "status": "pending" },
+    { "step": 3, "name": "task-schema-v2", "status": "pending" },
+    { "step": 4, "name": "isolated-worktree", "status": "pending" },
+    { "step": 5, "name": "sdk-spike", "status": "pending" },
+    { "step": 6, "name": "runner-adapter", "status": "pending" },
+    { "step": 7, "name": "resumable-telemetry", "status": "pending" },
+    { "step": 8, "name": "risk-based-review", "status": "pending" },
+    { "step": 9, "name": "bounded-dag", "status": "pending" },
+    { "step": 10, "name": "release-eval", "status": "pending" }
+  ]
+}

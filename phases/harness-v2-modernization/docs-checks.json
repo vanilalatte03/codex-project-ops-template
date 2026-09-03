@@ -1,0 +1,41 @@
+{
+  "paths": [
+    "phases/harness-v2-modernization"
+  ],
+  "skipDirs": [
+    ".git",
+    "__pycache__"
+  ],
+  "skipSuffixes": [
+    ".json"
+  ],
+  "required": [
+    {
+      "name": "Harness v1 template version baseline",
+      "paths": ["phases/harness-v2-modernization/BASELINE.md"],
+      "pattern": "TEMPLATE_VERSION.*2026\\.06\\.17"
+    },
+    {
+      "name": "representative eval scenarios",
+      "paths": ["phases/harness-v2-modernization/EVALS.md"],
+      "pattern": "시나리오 ID: EVAL-DOCS, EVAL-CODE, EVAL-V1, EVAL-SAFETY, EVAL-RESUME, EVAL-DEPS"
+    },
+    {
+      "name": "eval metric contract",
+      "paths": ["phases/harness-v2-modernization/EVALS.md"],
+      "pattern": "지표 ID: 성공률, first-pass 검증률, 재시도 횟수, wall time, 사람 개입 횟수, token 지표"
+    },
+    {
+      "name": "v1 compatibility and rollback",
+      "paths": ["phases/harness-v2-modernization/COMPATIBILITY.md"],
+      "pattern": "계약 섹션: v1 보존 기준, fallback 원칙, rollback trigger, rollback 절차"
+    },
+    {
+      "name": "issue sequence through release gate",
+      "paths": ["phases/harness-v2-modernization/README.md"],
+      "pattern": "실행 순서 ID: #13 -> #14 -> #15 -> #16 -> #17 -> #18 -> #19 -> #20 -> #21 -> #22 -> #23"
+    }
+  ],
+  "finalRequired": [],
+  "forbidden": []
+}

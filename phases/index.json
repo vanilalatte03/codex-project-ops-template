@@ -1,3 +1,8 @@
 {
-  "phases": []
+  "phases": [
+    {
+      "dir": "harness-v2-modernization",
+      "status": "pending"
+    }
+  ]
 }
