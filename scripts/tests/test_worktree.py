@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 from shutil import rmtree
@@ -237,6 +238,7 @@ def test_long_windows_style_managed_path_is_normalized_and_bounded(lifecycle, tm
     assert len(handle.path.name) <= worktree.MAX_TASK_DIRECTORY_NAME_LENGTH
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows Git path limit is platform-specific")
 def test_overlong_windows_path_is_rejected_before_git_and_preserves_root(lifecycle, tmp_path: Path):
     manager, _, _ = lifecycle
     long_root = tmp_path / ("nested-" * 35)
