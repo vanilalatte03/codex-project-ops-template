@@ -16,7 +16,13 @@
       "completed_at": "2026-09-04T08:57:34Z",
       "summary": "Codex 실행을 core 환경과 공식 secret-name 제외 정책으로 제한하고 프로젝트별 filters 확장 지점을 고정했다."
     },
-    { "step": 2, "name": "progressive-guardrails", "status": "pending" },
+    {
+      "step": 2,
+      "name": "progressive-guardrails",
+      "status": "completed",
+      "completed_at": "2026-09-04T09:42:36Z",
+      "summary": "guardrail prompt를 경로·step 계약 중심으로 축소하고 참조 누락을 Codex 호출 전에 진단했으며 v1 대비 prompt 계약 proxy를 기록했다."
+    },
     { "step": 3, "name": "task-schema-v2", "status": "pending" },
     { "step": 4, "name": "isolated-worktree", "status": "pending" },
     { "step": 5, "name": "sdk-spike", "status": "pending" },

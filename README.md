@@ -70,7 +70,7 @@ MVP 범위, 기술 스택, 검증 명령, phase 경계를 먼저 문서로 확�
 | 3 | `docs/PRD.md` | 목표, 사용자, MVP 범위, 완료 기준, 제외 범위 | MVP 안팎을 Codex가 구분할 수 있음 |
 | 4 | `docs/ARCHITECTURE.md` | 기술 스택, 디렉터리 구조, 모듈 경계, 데이터 흐름, 테스트 전략 | 구현 경계와 검증 방식이 한 문서에 정리됨 |
 | 5 | `docs/ADR.md`, `docs/adr/*` | 되돌리면 안 되는 기술 결정과 변경 규칙 | 주요 선택의 이유와 상태가 기록됨 |
-| 6 | `docs/COMMANDS.md`, `.codex/project-profile.json` | 확정된 기술 스택 기준의 `dev`, `lint`, `test`, `build`, `profile`, `sourceRoots`, `testRoots`, 필요 시 `stageChecks`, `guardrailDocs` | 최소 `test`와 `build`가 비어 있지 않거나 manifest로 감지 가능 |
+| 6 | `docs/COMMANDS.md`, `.codex/project-profile.json` | 확정된 기술 스택 기준의 `dev`, `lint`, `test`, `build`, `profile`, `sourceRoots`, `testRoots`, 필요 시 `stageChecks`, `guardrailDocs` 경로 선택 | 최소 `test`와 `build`가 비어 있지 않거나 manifest로 감지 가능 |
 | 7 | `AGENTS.md` | 프로젝트명, 목표, 스택, 명령어, CRITICAL 규칙 | 템플릿 placeholder가 남아 있지 않음 |
 | 8 | `scripts/doctor.py --instance` | 복사한 프로젝트의 적용 상태 점검 | doctor가 exit code 0으로 종료 |
 

@@ -52,7 +52,8 @@ autopilot 운영 안전장치:
 - PR은 `gh pr checks --watch`로 원격 체크 통과를 확인한 뒤에만 squash merge한다.
 - `no checks reported`는 ready 직후 체크 생성 전 레이스일 수 있어 grace 동안 재확인한다. CI가 없는 저장소는 `--allow-no-checks`로 대기를 생략할 수 있다.
 - 금지 범위 규칙은 `.codex/scope-rules.json`의 `forbidden`, phase별 확장/허용은 `phases/<phase>/scope-rules.json`의 `extraForbidden`, `allowedScopeMessages`로 관리한다.
-- `execute.py`는 phase README/step 문서가 참조하는 `docs/*.md`만 기본 첨부한다. `.codex/project-profile.json`의 `guardrailDocs`가 있으면 그 목록이 우선한다.
+- `execute.py`의 guardrail prompt에는 문서 본문을 첨부하지 않고, Codex가 직접 읽어야 할 저장소 상대 경로만 기록한다. `guardrailDocs`가 비어 있지 않으면 그 목록을 우선하고, 비어 있거나 없으면 phase 문서 참조와 canonical 문서 fallback을 사용한다. 현재 step의 `읽어야 할 파일`도 경로 목록에 포함한다.
+- AGENTS, phase 문서, profile 또는 step이 지정한 경로가 누락되거나 읽을 수 없으면 Codex를 호출하기 전에 명확한 오류로 중단한다. `guardrailDocs`는 문서 내용이 아니라 경로 선택 입력이다.
 
 `scope-rules.json` rule schema:
 

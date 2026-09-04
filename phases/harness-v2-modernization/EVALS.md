@@ -84,6 +84,38 @@ wall time, 사람 개입, token은 성공 실행만 따로 요약하되 실패 �
 민감정보, credential, 전체 prompt, private thread 원문은 결과 레코드에 저장하지
 않는다.
 
+## Issue #15 측정 결과
+
+아래 결과는 EVAL-DOCS와 EVAL-CODE의 대표 fixture를 사용한 **prompt 구성 계약
+proxy**다. v1은 Issue #15 부모 branch의 기존 전체 문서 첨부 방식이며, v2는
+`25787d2580c86830ebd4d6f5799a032d406a591c`의 경로 중심 방식이다. Codex가 실제
+작업을 수행하거나 CI/PR gate를 통과한 결과가 아니므로 task 성공률 개선으로
+해석하지 않는다. PR #25에서 고정한 동일 variant/scenario/repetition, 3회 반복,
+동일 fixture·gate, token 미제공 시 `null` 기록 규칙을 적용했다.
+
+- fixture: `harness-v2-modernization` Step 2 `progressive-guardrails`
+- v1 기준 commit: `eb7192d`
+- v2 구현 commit: `25787d2580c86830ebd4d6f5799a032d406a591c`
+- 평가 도구 최종 commit: `9904ec7652f2d28bf5dc938274c124e99a4b6bd7`
+- fixture SHA-256: `9a6a50f1e7ee67595859c166a10c460012b224f34e5c543ce34fb3ae804c1644`
+- 재현 명령: `uv run --with pytest python -X utf8 scripts/eval_progressive_guardrails.py --phase harness-v2-modernization --step 2 --v1-commit eb7192d`
+- 조건: Windows 11 `10.0.26200`, Python `3.12.13`, Codex CLI `0.146.0`, effort
+  `medium`, 동일 fixture, variant별 3회, retry 상한 `3`, `setupIncluded=false`,
+  sandbox/approval/model 미호출, cache 상태 `not applicable`
+
+| variant | prompt 문자 수 | UTF-8 byte 수 | 계약 품질 통과 | 문서 본문 부재 |
+| --- | ---: | ---: | --- | --- |
+| v1 | 17,233 | 26,066 | 3/3 | 0/3 |
+| v2 | 2,565 | 3,814 | 3/3 | 3/3 |
+
+v2는 v1보다 prompt가 14,668자, 22,252 byte 줄어 UTF-8 기준 86.03% 감소했다.
+양쪽 모두 acceptance command, hard constraint, 직접 읽기 경로, step 작업 정의를
+3/3 보존했고, v2는 문서 본문을 3/3회 prompt에 포함하지 않았다. Codex 호출을
+수행하지 않은 proxy이므로 token 지표는 `null`이며 사유는
+`prompt proxy does not invoke codex exec and stores no prompt text`이다. 실제
+EVAL-DOCS/EVAL-CODE 성공률, first-pass, wall time, CI 및 hard gate는 Step 10
+release eval에서 같은 조건으로 별도 측정해야 한다.
+
 ## 릴리스 판정
 
 - hard gate: EVAL-V1과 EVAL-SAFETY 100% 성공, unit test·doctor·upgrade 검증 통과,

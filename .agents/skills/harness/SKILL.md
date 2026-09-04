@@ -257,7 +257,14 @@ python scripts/autopilot.py {작업명} --max-review-fixes 2  # phase 전체 구
 python scripts/autopilot.py {작업명} --dry-run --max-steps 1
 ```
 
-`scripts/execute.py`는 브랜치 생성, `AGENTS.md`, phase `README.md`, 참조된 `docs/*.md`, `docs/COMMANDS.md`의 가드레일 주입, 완료된 단계의 `summary` 컨텍스트 전달, 재시도 피드백, 코드 변경과 메타데이터의 2단계 커밋, completed 보고 후 인수 기준 재검증, 타임스탬프 기록, 선택적 push를 처리한다. 기본 실행은 Codex 승인과 sandbox를 유지하며, 필요한 경우에만 `--unsafe`를 명시한다. `.codex/project-profile.json`의 `guardrailDocs`가 있으면 그 문서 목록이 우선 첨부된다.
+`scripts/execute.py`는 브랜치 생성, `AGENTS.md`·phase·관련 문서의 직접 읽기 경로
+검증, 현재 step의 objective/acceptance criteria/hard constraints와 완료된 단계의
+`summary` context 전달, 재시도 피드백, 코드 변경과 메타데이터의 2단계 커밋,
+completed 보고 후 인수 기준 재검증, 타임스탬프 기록, 선택적 push를 처리한다.
+문서 본문은 prompt에 첨부하지 않고 Codex가 저장소에서 직접 읽는다.
+`.codex/project-profile.json`의 비어 있지 않은 `guardrailDocs`는 문서 본문이
+아닌 경로 선택 목록이며, 누락·판독 불가 경로는 Codex 호출 전에 진단한다. 기본
+실행은 Codex 승인과 sandbox를 유지하며, 필요한 경우에만 `--unsafe`를 명시한다.
 `scripts/execute.py`는 `--step` 또는 `--next-step-only`가 아닌 전체 phase 실행에서 모든 pending step이 완료되면 `python scripts/checks.py --stage final`을 실행한다.
 
 `scripts/autopilot.py`는 clean worktree에서 다음 pending step을 `codex/{phase}-step{N}-{name}` 브랜치로 실행하고 Draft PR을 만든다. `--base`를 생략하면 origin HEAD를 사용하고 실패 시 `main`으로 fallback한다. step 인수 기준, diff check, scope rule scan, Codex read-only review, 원격 PR checks가 통과하면 ready 전환 후 squash merge한다. 실패하면 PR 코멘트, GitHub Issue, `issues/{phase}/issue-N.md`를 남기고 같은 PR 브랜치에서 제한 횟수만큼 자동 수정과 재리뷰를 수행한다. 재시도 후에도 실패하면 PR과 Issue를 열어둔 채 중단한다.
