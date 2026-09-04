@@ -13,6 +13,9 @@
   정책을 활성화했습니다. 프로젝트별 non-secret runtime 환경 변수는
   `.codex/config.toml`의 `shell_environment_policy.filters`에서 명시적으로
   확장합니다.
+- guardrail prompt를 progressive disclosure 방식으로 전환했습니다. prompt에는
+  작업 계약과 직접 읽을 경로만 전달하고, 선택 경로의 누락·판독 불가 상태는
+  Codex 호출 전에 진단합니다.
 
 ## 2026.06.17
 

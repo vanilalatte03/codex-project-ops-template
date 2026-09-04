@@ -54,6 +54,27 @@ profile override가 없으면 `docs/COMMANDS.md`, 그 다음 프로젝트 manife
 - Python: `pyproject.toml`, `uv.lock`, `pytest`, `ruff`
 - Node: `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
 
+## Progressive guardrails
+
+`scripts/execute.py`는 Codex prompt에 AGENTS, phase 문서, 관련 문서의 본문을
+복사하지 않습니다. 대신 작업 목표, acceptance criteria, hard constraints, 이전
+step summary와 Codex가 저장소에서 직접 읽어야 할 경로를 전달합니다. 문서 본문은
+Codex가 해당 경로를 읽을 때만 context에 들어옵니다.
+
+`guardrailDocs`는 기존과 같이 경로 선택 입력입니다.
+
+1. 비어 있지 않은 `guardrailDocs` 목록을 명시하면 그 목록을 사용합니다.
+2. 목록이 비어 있거나 키가 없으면 phase README/step 문서가 참조한 경로를
+   사용합니다.
+3. 참조 경로가 없으면 `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/ADR.md`,
+   `docs/COMMANDS.md`, `docs/SCOPE_CHANGE_CHECKLIST.md` 중 존재하는 경로를
+   fallback으로 사용합니다.
+
+모든 경로는 저장소 상대 경로여야 합니다. 선택된 경로와 현재 step의 `읽어야 할
+파일`이 누락되거나 읽을 수 없으면 Codex 실행 전에 실패하므로, 잘못된 문서 참조를
+조용히 건너뛰지 않습니다. `guardrailDocs: []`는 자동 선택을 의미하며 문서 본문을
+prompt에 포함하라는 뜻이 아닙니다.
+
 ## Codex subprocess 환경
 
 Harness가 `execute.py`와 `autopilot.py`에서 실행하는 Codex 명령은
