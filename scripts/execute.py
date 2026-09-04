@@ -27,6 +27,7 @@ from codex_common import (
     ALLOWED_CODEX_EFFORTS,
     CODEX_EXEC_TIMEOUT,
     CODEX_ENV_CONFIG,
+    CODEX_ENV_SECRET_FILTER_CONFIG,
     codex_base_cmd,
     configure_utf8_stdio,
     read_acceptance_commands,

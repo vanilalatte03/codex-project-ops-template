@@ -14,11 +14,12 @@ from pathlib import Path
 # .codex/project-profile.json `templateVersion`에 기록하고, doctor가 둘을
 # 비교해 "harness 파일과 동기화 기록이 어긋난 상태"를 잡는다.
 # 업그레이드 절차는 템플릿 guides/UPGRADE.md를 따른다.
-TEMPLATE_VERSION = "2026.06.17"
+TEMPLATE_VERSION = "2026.09.04"
 
 ALLOWED_CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 CODEX_EXEC_TIMEOUT = 1800
-CODEX_ENV_CONFIG = "shell_environment_policy.inherit=all"
+CODEX_ENV_CONFIG = 'shell_environment_policy.inherit="core"'
+CODEX_ENV_SECRET_FILTER_CONFIG = "shell_environment_policy.ignore_default_excludes=false"
 ACCEPTANCE_SECTION_HEADER = "## 인수 기준"
 
 
@@ -56,14 +57,23 @@ def codex_effort_config(effort: str) -> list[str]:
     return ["-c", f'model_reasoning_effort="{effort}"']
 
 
+def codex_environment_config() -> list[str]:
+    """Return the conservative environment policy for every Codex invocation."""
+    return [
+        "-c",
+        CODEX_ENV_CONFIG,
+        "-c",
+        CODEX_ENV_SECRET_FILTER_CONFIG,
+    ]
+
+
 def codex_base_cmd(effort: str) -> list[str]:
     return [
         resolve_codex_bin(),
         "exec",
         "--json",
         *codex_effort_config(effort),
-        "-c",
-        CODEX_ENV_CONFIG,
+        *codex_environment_config(),
     ]
 
 

@@ -54,6 +54,28 @@ profile override가 없으면 `docs/COMMANDS.md`, 그 다음 프로젝트 manife
 - Python: `pyproject.toml`, `uv.lock`, `pytest`, `ruff`
 - Node: `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
 
+## Codex subprocess 환경
+
+Harness가 `execute.py`와 `autopilot.py`에서 실행하는 Codex 명령은
+`shell_environment_policy.inherit="core"`를 사용합니다. 플랫폼별 핵심 환경과
+`PATH`는 유지하면서 전체 부모 환경을 그대로 넘기지 않습니다. 또한
+`shell_environment_policy.ignore_default_excludes=false`를 함께 지정해 Codex의
+공식 기본 제외 규칙(이름에 `KEY`, `SECRET`, `TOKEN`이 포함된 변수)을 적용합니다.
+
+프로젝트에 꼭 필요한 non-secret runtime 변수만 다음 공식 확장 지점에 이름으로
+추가합니다.
+
+```toml
+[shell_environment_policy.filters]
+"PATH" = "include"
+"PROJECT_RUNTIME_HOME" = "include"
+```
+
+`include`를 하나라도 추가하면 필터가 allowlist가 되므로, 필요한 경우 `PATH`와
+프로젝트가 요구하는 core 변수를 함께 적습니다. credential 값이나 secret-name
+변수는 이 파일과 fixture에 넣지 않습니다. `execute.py`와 autopilot의 Codex
+호출은 공통 명령 생성기를 사용하므로 두 실행 경로의 정책이 달라지지 않습니다.
+
 ## Scope Rules
 
 scope rule은 MVP 범위 밖 기능이 step PR에 끼어드는 것을 막기 위한 데이터 기반

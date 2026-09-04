@@ -9,7 +9,13 @@
       "completed_at": "2026-09-03T15:40:23Z",
       "summary": "Harness v1 기준선, 대표 eval 지표, #14~#23 실행 순서와 호환·rollback 계약을 고정했다."
     },
-    { "step": 1, "name": "minimize-environment-inheritance", "status": "pending" },
+    {
+      "step": 1,
+      "name": "minimize-environment-inheritance",
+      "status": "completed",
+      "completed_at": "2026-09-04T08:57:34Z",
+      "summary": "Codex 실행을 core 환경과 공식 secret-name 제외 정책으로 제한하고 프로젝트별 filters 확장 지점을 고정했다."
+    },
     { "step": 2, "name": "progressive-guardrails", "status": "pending" },
     { "step": 3, "name": "task-schema-v2", "status": "pending" },
     { "step": 4, "name": "isolated-worktree", "status": "pending" },

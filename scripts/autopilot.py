@@ -19,9 +19,9 @@ import guard
 from codex_common import (
     ALLOWED_CODEX_EFFORTS,
     CODEX_ENV_CONFIG,
+    CODEX_ENV_SECRET_FILTER_CONFIG,
     CODEX_EXEC_TIMEOUT,
     codex_base_cmd,
-    codex_effort_config,
     configure_utf8_stdio,
     read_acceptance_commands,
     resolve_codex_bin,
@@ -867,16 +867,11 @@ class AutopilotRunner:
         last_message_path = self._temporary_path(".txt")
         try:
             cmd = [
-                resolve_codex_bin(),
-                "exec",
-                *codex_effort_config(self.review_effort),
-                "-c",
-                CODEX_ENV_CONFIG,
+                *codex_base_cmd(self.review_effort),
                 "--output-schema",
                 str(schema_path),
                 "--output-last-message",
                 str(last_message_path),
-                "--json",
                 "-",
             ]
             result = self._run(cmd, check=False, timeout=CODEX_EXEC_TIMEOUT, input_text=prompt)
@@ -905,10 +900,7 @@ class AutopilotRunner:
                 [
                     self._command_failure(
                         [
-                            "codex",
-                            "exec",
-                            *codex_effort_config(self.review_effort),
-                            "--json",
+                            *codex_base_cmd(self.review_effort),
                             "<review-prompt>",
                         ],
                         result,

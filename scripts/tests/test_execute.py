@@ -588,6 +588,7 @@ class TestInvokeCodex:
         assert cmd[1] == "exec"
         assert "--json" in cmd
         assert ex.CODEX_ENV_CONFIG in cmd
+        assert ex.CODEX_ENV_SECRET_FILTER_CONFIG in cmd
         assert 'model_reasoning_effort="medium"' in cmd
         assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
         assert cmd[-1] == "-"
@@ -606,6 +607,7 @@ class TestInvokeCodex:
         assert cmd[:2] == [ex.CODEX_BIN, "exec"]
         assert 'model_reasoning_effort="high"' in cmd
         assert ex.CODEX_ENV_CONFIG in cmd
+        assert ex.CODEX_ENV_SECRET_FILTER_CONFIG in cmd
         assert "--json" in cmd
 
     def test_unsafe_adds_bypass_flag(self, executor):
