@@ -17,6 +17,27 @@
 - v2 reader가 기록한 상태를 v1 fallback이 읽지 못할 가능성이 있으면 원본을
   보존하고 변환 전 backup·검증·복구 절차를 제공한다.
 
+## task schema v2 (#16)
+
+- v1은 기존 `steps[]`와 `step`, `name`, `status`를 그대로 읽는다. 현재 fixture인
+  `phases/0-example/index.json`은 v1 보존 검증의 기준이며 v2 필드를 자동으로
+  추가하지 않는다.
+- v2는 `schemaVersion: 2`, `tasks[]`와 각 task의 필수 `id`, `objective`, `status`,
+  선택 `dependsOn`, `issue`, `risk`를 사용한다. 공통 status는 v1과 동일하게
+  `pending`, `completed`, `error`, `blocked`다.
+- `scripts/task_schema.py`가 두 형식을 구분·검증한다. 중복 id, self/unknown
+  dependency, 필수 필드·타입·status 오류는 파일 및 필드 경로와 reason을 포함해
+  Codex와 GitHub 인증 전에 거부한다.
+- v2 task의 배열 위치와 id에서 파생한 `step`/`name`은 현재 serial executor를
+  위한 메모리 alias일 뿐이다. 저장할 때는 원래 `tasks[]` 형식과 필드 생략을
+  보존한다.
+- `dependsOn`은 이 단계에서 reference validation만 수행한다. ready set, cycle
+  처리, DAG scheduling과 parallelism은 #22의 범위이며 #16에서 선행 구현하지
+  않는다.
+- v1→v2 변환은 자동으로 실행하지 않는다. 변환이 필요한 프로젝트는 원본 백업,
+  dry-run 매핑 검토, validator와 companion 문서 검증, 사용자 승인, 별도 commit을
+  포함한 명시적 opt-in 절차를 사용한다.
+
 ## fallback 원칙
 
 - SDK 또는 native review가 설치되지 않았거나 capability 검증, 인증, sandbox,

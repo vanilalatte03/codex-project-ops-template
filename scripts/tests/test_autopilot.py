@@ -85,6 +85,44 @@ def test_preconditions_stop_on_gh_auth_failure(runner):
     assert "gh auth failed" in str(exc_info.value)
 
 
+def test_preconditions_reject_invalid_v2_before_github_or_codex(runner, tmp_repo):
+    index_path = tmp_repo / "phases" / "0-mvp" / "index.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 2,
+                "project": "Demo",
+                "phase": "0-mvp",
+                "tasks": [
+                    {
+                        "id": "same",
+                        "objective": "첫 결과를 만든다.",
+                        "dependsOn": [],
+                        "status": "pending",
+                    },
+                    {
+                        "id": "same",
+                        "objective": "두 번째 결과를 만든다.",
+                        "dependsOn": [],
+                        "status": "pending",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    runner._git = lambda *args, check=True: cp(stdout="")
+
+    def unexpected_gh(*args, check=True, timeout=None):
+        raise AssertionError("GitHub authentication must not run for an invalid phase index")
+
+    runner._gh = unexpected_gh
+
+    with pytest.raises(ap.AutopilotError, match=r"tasks\[1\]\.id.*duplicate id"):
+        runner._ensure_preconditions()
+
+
 def test_step_success_creates_draft_pr_comments_and_merges(runner, tmp_repo):
     gh_calls = []
     executed = []

@@ -78,6 +78,7 @@ def _write_template_files(root: Path):
     )
     _write_cross_platform_hook_contract(root)
     _write_example_phase(root)
+    _write_v2_example_phase(root)
 
 
 def _write_example_phase(root: Path):
@@ -122,6 +123,65 @@ def _write_example_phase(root: Path):
         json.dumps(
             {
                 "paths": ["phases/0-example"],
+                "required": [{"name": "goal", "pattern": "^## 목표$"}],
+                "finalRequired": [{"name": "done", "pattern": "^## 완료 기준$"}],
+                "forbidden": [{"name": "stale", "pattern": "deprecated-example-api"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (phase_dir / "scope-rules.json").write_text(
+        json.dumps(
+            {
+                "extraForbidden": [{"message": "범위 밖 기능", "anyLowered": ["sync-service"]}],
+                "allowedScopeMessages": [{"message": "범위 밖 기능", "steps": [0]}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_v2_example_phase(root: Path):
+    phase_dir = root / "phases" / "0-example-v2"
+    phase_dir.mkdir(parents=True, exist_ok=True)
+    (phase_dir / "README.md").write_text(
+        "# Phase: 0-example-v2\n\n## 목표\n- v2 예시\n\n## 완료 기준\n- 예시 기준\n",
+        encoding="utf-8",
+    )
+    (phase_dir / "index.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": 2,
+                "project": "<프로젝트명>",
+                "phase": "0-example-v2",
+                "tasks": [
+                    {
+                        "id": "project-setup",
+                        "objective": "예시 결과를 만든다.",
+                        "dependsOn": [],
+                        "issue": 16,
+                        "risk": "low",
+                        "status": "pending",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (phase_dir / "step0.md").write_text(
+        "# 단계 0: project-setup\n\n"
+        "## 작업\n예시 결과를 만든다.\n\n"
+        "## 인수 기준\n\n```bash\npython scripts/checks.py --stage manual\n```\n\n"
+        "## 금지사항\n- 범위 밖 기능을 추가하지 마라.\n",
+        encoding="utf-8",
+    )
+    (phase_dir / "docs-checks.json").write_text(
+        json.dumps(
+            {
+                "paths": ["phases/0-example-v2"],
                 "required": [{"name": "goal", "pattern": "^## 목표$"}],
                 "finalRequired": [{"name": "done", "pattern": "^## 완료 기준$"}],
                 "forbidden": [{"name": "stale", "pattern": "deprecated-example-api"}],
@@ -330,6 +390,45 @@ def test_template_mode_detects_example_index_schema_violations(tmp_path, monkeyp
     assert any("`phase` must match the directory name" in issue for issue in issues)
     assert any("step 1 status must be one of" in issue for issue in issues)
     assert "phases/0-example/step1.md is missing." in issues
+
+
+def test_template_mode_detects_v2_schema_violations(tmp_path, monkeypatch):
+    _write_template_files(tmp_path)
+    monkeypatch.setattr(doctor, "_git_hooks_path", lambda root=tmp_path: "")
+    (tmp_path / "phases" / "0-example-v2" / "index.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": 2,
+                "project": "Demo",
+                "phase": "0-example-v2",
+                "tasks": [
+                    {
+                        "id": "same",
+                        "objective": "첫 결과",
+                        "dependsOn": [],
+                        "status": "pending",
+                    },
+                    {
+                        "id": "same",
+                        "objective": "두 번째 결과",
+                        "dependsOn": [],
+                        "status": "pending",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    assert any(
+        "phases/0-example-v2/index.json" in issue
+        and "tasks[1].id" in issue
+        and "duplicate id" in issue
+        for issue in issues
+    )
 
 
 def test_template_mode_detects_example_step_without_acceptance_commands(tmp_path, monkeypatch):

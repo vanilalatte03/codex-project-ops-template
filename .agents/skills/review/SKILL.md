@@ -35,6 +35,13 @@ description: "Codex가 이 Harness 기반 프로젝트의 변경사항을 AGENTS
 3. 테스트 커버리지: 새로운 동작에 적절한 테스트가 있거나, 테스트가 필요 없는 명확한 이유가 있는가?
 4. 핵심 규칙: 변경사항이 `AGENTS.md`의 CRITICAL 규칙을 위반하지 않는가?
 5. 빌드 준비 상태: `docs/COMMANDS.md`의 빌드, 린트, 테스트 명령을 로컬에서 실행할 수 있을 때 통과하는가?
+6. task schema: `phases/0-example/index.json`의 v1 원형이 유지되고, v2 변경은
+   `docs/TASK_SCHEMA.md`의 `id`·`objective`·`dependsOn`·`issue`·`risk` 및 공통
+   status 계약을 따르는가?
+7. pre-Codex safety: 중복 id, missing/self dependency, 필수 필드·타입·status 오류가
+   Codex/GitHub 호출 전에 파일 및 필드 경로와 reason으로 거부되는가?
+8. scope boundary: v2 alias가 저장 시 v1/v2 원형을 바꾸지 않고, #22의 DAG
+   scheduler·ready set·cycle 처리·parallelism이나 자동 migration을 선행하지 않는가?
 
 ### 출력
 
@@ -46,6 +53,8 @@ description: "Codex가 이 Harness 기반 프로젝트의 변경사항을 AGENTS
 | 기술 스택 준수 | 통과/실패 | {상세} |
 | 테스트 존재 | 통과/실패 | {상세} |
 | CRITICAL 규칙 | 통과/실패 | {상세} |
+| task schema와 pre-Codex 검증 | 통과/실패 | {v1/v2 contract, path/reason 오류, 실행 전 차단} |
+| 후속 범위 격리 | 통과/실패 | {DAG/parallel/migration 선행 여부} |
 | 빌드 가능 | 통과/실패 | {상세} |
 
 어떤 항목이라도 실패하면 파일 경로, 구체적인 문제, 수정 방안을 포함한다. 의존성이 없어서 검사를 실행하지 못한 경우에는 빌드 행에 그 사실을 명확히 적는다.

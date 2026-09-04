@@ -6,6 +6,16 @@
 형식, doctor 검사 등)를 먼저 확인합니다. 절차는
 [guides/UPGRADE.md](guides/UPGRADE.md)를 따릅니다.
 
+## 2026.09.04.1
+
+### Added
+- `scripts/task_schema.py`와 `docs/TASK_SCHEMA.md`를 추가해 outcome task v2의
+  `id`, `objective`, `dependsOn`, `issue`, `risk` 계약과 v1 `steps[]` 호환을
+  정의했습니다.
+- v2 예제 phase, pre-Codex schema validation, duplicate/dependency/type/status
+  오류 테스트를 추가했습니다. v1→v2 자동 migration과 DAG/parallel 실행은
+  포함하지 않습니다.
+
 ## 2026.09.04
 
 ### Changed

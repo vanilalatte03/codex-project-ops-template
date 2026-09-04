@@ -25,6 +25,25 @@ stage에서 `test`와 `build`는 필수 gate입니다. 둘 중 하나라도 비�
 | phase-step | `python scripts/execute.py <phase-name> --next-step-only` | no | 다음 pending step만 실행 |
 | autopilot | `python scripts/autopilot.py <phase-name> --max-review-fixes 2` | no | phase 전체 구현 시 권장. step별 PR 생성, 자체 리뷰, 이슈 기록, 자동 병합 루프 |
 
+## Phase index schema 검증
+
+`phases/{phase}/index.json`은 [`TASK_SCHEMA.md`](TASK_SCHEMA.md)의 v1 `steps[]`와
+v2 `tasks[]` 계약을 따릅니다. `execute.py`와 `autopilot.py`는 공통 validator를
+통해 필수 필드, 공통 status, 중복 id와 dependency reference를 Codex 호출 전에
+확인합니다. v2의 `dependsOn`은 현재 직렬 list-order를 바꾸지 않습니다.
+
+템플릿의 v1/v2 예시와 companion 문서는 다음으로 확인합니다.
+
+```bash
+python scripts/doctor.py --template
+python -m pytest scripts
+```
+
+이 검증은 기존 `phases/0-example/index.json`을 v1 그대로 읽는지와
+`phases/0-example-v2/index.json`의 outcome 필드를 함께 확인합니다. 자동 migration은
+없으며, v1을 v2로 바꾸는 작업은 원본 백업과 사용자 승인 뒤 별도 opt-in으로
+수행해야 합니다. DAG ready-set, cycle 처리와 병렬 실행은 후속 #22 범위입니다.
+
 ## Harness 운영 옵션
 
 Codex 호출은 프롬프트를 stdin으로 전달해 긴 phase 문서에서 argv 길이 제한을 피합니다.

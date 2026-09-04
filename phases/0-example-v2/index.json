@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "project": "<프로젝트명>",
+  "phase": "0-example-v2",
+  "tasks": [
+    {
+      "id": "project-setup",
+      "objective": "프로젝트 골격을 준비한다.",
+      "dependsOn": [],
+      "issue": 16,
+      "risk": "low",
+      "status": "pending"
+    },
+    {
+      "id": "outcome-check",
+      "objective": "예시 결과를 확인한다.",
+      "dependsOn": ["project-setup"],
+      "risk": "low",
+      "status": "pending"
+    }
+  ]
+}

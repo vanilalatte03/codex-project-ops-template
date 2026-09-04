@@ -1,0 +1,38 @@
+{
+  "paths": [
+    "phases/0-example-v2"
+  ],
+  "skipDirs": [
+    ".git",
+    "__pycache__"
+  ],
+  "skipSuffixes": [
+    ".json"
+  ],
+  "required": [
+    {
+      "name": "v2 task format marker",
+      "paths": ["phases/0-example-v2/index.json"],
+      "pattern": "schemaVersion.*2"
+    },
+    {
+      "name": "outcome objective",
+      "paths": ["phases/0-example-v2/index.json"],
+      "pattern": "objective"
+    }
+  ],
+  "finalRequired": [
+    {
+      "name": "example completion contract",
+      "paths": ["phases/0-example-v2/README.md"],
+      "pattern": "## 완료 기준"
+    }
+  ],
+  "forbidden": [
+    {
+      "name": "parallel scheduler example",
+      "paths": ["phases/0-example-v2/README.md"],
+      "pattern": "무제한 병렬 실행"
+    }
+  ]
+}

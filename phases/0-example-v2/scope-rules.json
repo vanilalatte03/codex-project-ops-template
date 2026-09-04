@@ -1,0 +1,14 @@
+{
+  "extraForbidden": [
+    {
+      "message": "예시 범위 밖 스케줄러",
+      "anyLowered": ["parallel scheduler"]
+    }
+  ],
+  "allowedScopeMessages": [
+    {
+      "message": "예시 범위 밖 스케줄러",
+      "steps": [0, 1]
+    }
+  ]
+}

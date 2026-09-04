@@ -12,6 +12,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 import execute as ex
+import task_schema
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +170,82 @@ class TestJsonHelpers:
     def test_load_nonexistent_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             ex.StepExecutor._read_json(tmp_path / "nope.json")
+
+
+class TestTaskSchemaIntegration:
+    def test_executor_accepts_v2_and_keeps_serial_list_order(self, tmp_project):
+        phase = tmp_project / "phases" / "0-v2"
+        phase.mkdir()
+        (phase / "index.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 2,
+                    "project": "Demo",
+                    "phase": "0-v2",
+                    "tasks": [
+                        {
+                            "id": "first",
+                            "objective": "첫 번째 결과를 만든다.",
+                            "dependsOn": [],
+                            "status": "pending",
+                        },
+                        {
+                            "id": "second",
+                            "objective": "두 번째 결과를 만든다.",
+                            "dependsOn": ["first"],
+                            "status": "pending",
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        (phase / "step0.md").write_text("# Step 0\n", encoding="utf-8")
+        (phase / "step1.md").write_text("# Step 1\n", encoding="utf-8")
+
+        with patch.object(ex, "ROOT", tmp_project):
+            instance = ex.StepExecutor("0-v2", next_step_only=True)
+
+        selected = instance._select_single_step()
+
+        assert selected["step"] == 0
+        assert selected["name"] == "first"
+        assert selected["objective"] == "첫 번째 결과를 만든다."
+        assert selected["dependsOn"] == []
+
+    def test_invalid_v2_index_is_rejected_before_codex(self, tmp_project):
+        phase = tmp_project / "phases" / "0-invalid"
+        phase.mkdir()
+        (phase / "index.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 2,
+                    "project": "Demo",
+                    "phase": "0-invalid",
+                    "tasks": [
+                        {
+                            "id": "same",
+                            "objective": "결과를 만든다.",
+                            "dependsOn": [],
+                            "status": "pending",
+                        },
+                        {
+                            "id": "same",
+                            "objective": "다른 결과를 만든다.",
+                            "dependsOn": [],
+                            "status": "pending",
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.object(ex, "ROOT", tmp_project):
+            with pytest.raises(task_schema.TaskSchemaError, match=r"tasks\[1\]\.id.*duplicate id"):
+                ex.StepExecutor("0-invalid")
 
 
 # ---------------------------------------------------------------------------
