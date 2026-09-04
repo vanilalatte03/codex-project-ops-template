@@ -88,14 +88,15 @@ wall time, 사람 개입, token은 성공 실행만 따로 요약하되 실패 �
 
 아래 결과는 EVAL-DOCS와 EVAL-CODE의 대표 fixture를 사용한 **prompt 구성 계약
 proxy**다. v1은 Issue #15 부모 branch의 기존 전체 문서 첨부 방식이며, v2는
-`9904ec7652f2d28bf5dc938274c124e99a4b6bd7`의 경로 중심 방식이다. Codex가 실제
+`25787d2580c86830ebd4d6f5799a032d406a591c`의 경로 중심 방식이다. Codex가 실제
 작업을 수행하거나 CI/PR gate를 통과한 결과가 아니므로 task 성공률 개선으로
 해석하지 않는다. PR #25에서 고정한 동일 variant/scenario/repetition, 3회 반복,
 동일 fixture·gate, token 미제공 시 `null` 기록 규칙을 적용했다.
 
 - fixture: `harness-v2-modernization` Step 2 `progressive-guardrails`
 - v1 기준 commit: `eb7192d`
-- v2 구현 commit: `9904ec7652f2d28bf5dc938274c124e99a4b6bd7`
+- v2 구현 commit: `25787d2580c86830ebd4d6f5799a032d406a591c`
+- 평가 도구 최종 commit: `9904ec7652f2d28bf5dc938274c124e99a4b6bd7`
 - fixture SHA-256: `9a6a50f1e7ee67595859c166a10c460012b224f34e5c543ce34fb3ae804c1644`
 - 재현 명령: `uv run --with pytest python -X utf8 scripts/eval_progressive_guardrails.py --phase harness-v2-modernization --step 2 --v1-commit eb7192d`
 - 조건: Windows 11 `10.0.26200`, Python `3.12.13`, Codex CLI `0.146.0`, effort
