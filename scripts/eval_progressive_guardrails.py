@@ -47,17 +47,24 @@ def _load_phase_step(phase: str, step_number: int | None) -> tuple[dict, Path]:
     return step, phase_dir / f"step{step['step']}.md"
 
 
-def _fixture_sha256(phase: str, step_path: Path) -> str:
+def _fixture_sha256(phase: str) -> str:
     phase_dir = ROOT / "phases" / phase
     paths = [
         ROOT / "AGENTS.md",
         phase_dir / "README.md",
-        step_path,
+        phase_dir / "index.json",
+        *sorted(phase_dir.glob("step*.md")),
         ROOT / ".codex" / "project-profile.json",
         ROOT / "docs" / "COMMANDS.md",
+        *sorted((ROOT / "docs").glob("*.md")),
+        *sorted((ROOT / "docs" / "adr").glob("*.md")),
     ]
     digest = hashlib.sha256()
+    seen: set[Path] = set()
     for path in paths:
+        if path in seen or not path.is_file():
+            continue
+        seen.add(path)
         relative = path.relative_to(ROOT).as_posix()
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
@@ -182,7 +189,7 @@ def evaluate(phase: str, v1_commit: str, step_number: int | None) -> dict:
     step, step_path = _load_phase_step(phase, step_number)
     v1_prompt = _build_v1_prompt(phase, step, step_path, v1_commit)
     v2_prompt = _build_v2_prompt(phase, step)
-    fixture_sha = _fixture_sha256(phase, step_path)
+    fixture_sha = _fixture_sha256(phase)
     v1_quality = _contract_quality(v1_prompt, phase, step, step_path)
     v2_quality = _contract_quality(v2_prompt, phase, step, step_path)
     repetitions = []
