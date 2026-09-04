@@ -64,7 +64,28 @@ def phase_dir(tmp_project):
     }
     (d / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False))
     (d / "README.md").write_text("# Phase README\n\n현재 phase 목표")
-    (d / "step2.md").write_text("# Step 2: UI\n\nUI를 구현하세요.")
+    (d / "step2.md").write_text(
+        "\n".join(
+            [
+                "# Step 2: UI",
+                "",
+                "## 읽어야 할 파일",
+                "- /docs/arch.md",
+                "",
+                "## 작업",
+                "UI를 구현하세요.",
+                "",
+                "## 인수 기준",
+                "```bash",
+                "python -m pytest",
+                "```",
+                "",
+                "## 금지사항",
+                "- credential 값이나 secret을 prompt에 넣지 마라.",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     return d
 
@@ -155,20 +176,28 @@ class TestJsonHelpers:
 # ---------------------------------------------------------------------------
 
 class TestLoadGuardrails:
-    def test_loads_agents_md_and_docs(self, executor, tmp_project):
+    def test_loads_reference_paths_without_document_bodies(self, executor, tmp_project):
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
-        assert "# Rules" in result
-        assert "rule one" in result
-        assert "# Architecture" in result
-        assert "# Guide" in result
+        assert "AGENTS.md" in result
+        assert "phases/0-mvp/README.md" in result
+        assert "docs/arch.md" in result
+        assert "# Rules" not in result
+        assert "rule one" not in result
+        assert "# Architecture" not in result
+        assert "Some content" not in result
 
-    def test_sections_separated_by_divider(self, executor, tmp_project):
+    def test_prompt_explains_direct_read_boundary(self, executor, tmp_project):
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
-        assert "---" in result
+        assert "직접 읽어야 할 경로" in result
+        assert "본문은 이 prompt에 첨부되지 않습니다" in result
 
     def test_docs_sorted_alphabetically(self, executor, tmp_project):
+        (executor._phase_dir / "step2.md").write_text(
+            "# Step 2\n\n## 읽어야 할 파일\n- /docs/guide.md\n- /docs/arch.md\n",
+            encoding="utf-8",
+        )
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
         arch_pos = result.index("arch")
@@ -179,31 +208,40 @@ class TestLoadGuardrails:
         adr_dir = tmp_project / "docs" / "adr"
         adr_dir.mkdir()
         (adr_dir / "0001-test.md").write_text("# Split ADR")
+        (executor._phase_dir / "step2.md").write_text(
+            "# Step 2\n\n## 읽어야 할 파일\n- /docs/adr/0001-test.md\n",
+            encoding="utf-8",
+        )
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
         assert "adr/0001-test" in result
-        assert "Split ADR" in result
+        assert "Split ADR" not in result
 
     def test_loads_phase_readme(self, executor, tmp_project):
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
         assert "현재 Phase README" in result
-        assert "현재 phase 목표" in result
+        assert "phases/0-mvp/README.md" in result
+        assert "현재 phase 목표" not in result
 
     def test_no_agents_md(self, executor, tmp_project):
         (tmp_project / "AGENTS.md").unlink()
         with patch.object(ex, "ROOT", tmp_project):
-            result = executor._load_guardrails()
-        assert "AGENTS.md" not in result
-        assert "Architecture" in result
+            with pytest.raises(ex.GuardrailReferenceError, match="AGENTS.md"):
+                executor._load_guardrails()
 
     def test_no_docs_dir(self, executor, tmp_project):
         import shutil
         shutil.rmtree(tmp_project / "docs")
+        (executor._phase_dir / "step2.md").write_text(
+            "# Step 2: UI\n\n## 작업\nUI를 구현하세요.",
+            encoding="utf-8",
+        )
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
-        assert "Rules" in result
-        assert "Architecture" not in result
+        assert "AGENTS.md" in result
+        assert "docs/" not in result
+        assert "Rules" not in result
 
     def test_empty_project(self, tmp_path):
         with patch.object(ex, "ROOT", tmp_path):
@@ -224,11 +262,13 @@ class TestLoadGuardrails:
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
 
-        assert "# Architecture" in result
-        assert "# Guide" not in result
+        assert "docs/arch.md" in result
+        assert "docs/guide.md" not in result
+        assert "# Architecture" not in result
+        assert "Some content" not in result
         assert "직접 읽어라" in result
-        assert "# Rules" in result
-        assert "# Phase README" in result
+        assert "# Rules" not in result
+        assert "# Phase README" not in result
 
     def test_guardrail_docs_profile_overrides_references(self, executor, tmp_project):
         (executor._phase_dir / "step2.md").write_text(
@@ -244,8 +284,53 @@ class TestLoadGuardrails:
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
 
-        assert "# Guide" in result
+        assert "docs/guide.md" in result
+        assert "docs/arch.md" not in result
+        assert "# Guide" not in result
+
+    def test_empty_guardrail_docs_uses_phase_references(self, executor, tmp_project):
+        (executor._phase_dir / "step2.md").write_text(
+            "# Step 2: UI\n\ndocs/arch.md 계약을 따라 UI를 구현하세요.",
+            encoding="utf-8",
+        )
+        codex_dir = tmp_project / ".codex"
+        codex_dir.mkdir()
+        (codex_dir / "project-profile.json").write_text(
+            json.dumps({"guardrailDocs": []}),
+            encoding="utf-8",
+        )
+
+        with patch.object(ex, "ROOT", tmp_project):
+            result = executor._load_guardrails()
+
+        assert "docs/arch.md" in result
         assert "# Architecture" not in result
+
+    def test_missing_profile_reference_is_diagnosed(self, executor, tmp_project):
+        codex_dir = tmp_project / ".codex"
+        codex_dir.mkdir()
+        (codex_dir / "project-profile.json").write_text(
+            json.dumps({"guardrailDocs": ["docs/missing.md"]}),
+            encoding="utf-8",
+        )
+
+        with patch.object(ex, "ROOT", tmp_project):
+            with pytest.raises(ex.GuardrailReferenceError, match="docs/missing.md"):
+                executor._load_guardrails()
+
+    def test_unreadable_profile_reference_is_diagnosed(self, executor, tmp_project):
+        secret_doc = tmp_project / "docs" / "secret.md"
+        secret_doc.write_bytes(b"\xff\xfe")
+        codex_dir = tmp_project / ".codex"
+        codex_dir.mkdir()
+        (codex_dir / "project-profile.json").write_text(
+            json.dumps({"guardrailDocs": ["docs/secret.md"]}),
+            encoding="utf-8",
+        )
+
+        with patch.object(ex, "ROOT", tmp_project):
+            with pytest.raises(ex.GuardrailReferenceError, match="docs/secret.md"):
+                executor._load_guardrails()
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +434,23 @@ class TestBuildPreamble:
         result = executor._build_preamble("", "", "## 프로젝트 검증 명령\n\n```bash\npython -m pytest\n```\n")
         assert "프로젝트 검증 명령" in result
         assert "python -m pytest" in result
+
+    def test_includes_step_contract_without_full_step_document(self, executor):
+        result = executor._build_preamble(
+            "## 직접 읽어야 할 경로\n\n- `AGENTS.md`\n- `docs/arch.md`",
+            "## 이전 Step 산출물\n\n- Step 0: done\n",
+            "## 프로젝트 검증 명령\n\n```bash\npython -m pytest\n```\n",
+            step={"step": 2, "name": "ui"},
+        )
+
+        assert "## Objective" in result
+        assert "UI를 구현하세요." in result
+        assert "## Acceptance criteria" in result
+        assert "python -m pytest" in result
+        assert "## Hard constraints" in result
+        assert "credential 값이나 secret을 prompt에 넣지 마라." in result
+        assert "# Phase README" not in result
+        assert "현재 phase 목표" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -593,7 +695,7 @@ class TestInvokeCodex:
         assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
         assert cmd[-1] == "-"
         assert "PREAMBLE" in mock_run.call_args.kwargs["input"]
-        assert "UI를 구현하세요" in mock_run.call_args.kwargs["input"]
+        assert "UI를 구현하세요" not in mock_run.call_args.kwargs["input"]
 
     def test_codex_effort_adds_codex_config(self, executor):
         executor._codex_effort = "high"
@@ -634,6 +736,53 @@ class TestInvokeCodex:
         assert data["step"] == 2
         assert data["name"] == "ui"
         assert data["exitCode"] == 0
+        assert "PREAMBLE" not in json.dumps(data, ensure_ascii=False)
+
+    def test_prompt_and_output_do_not_include_document_body_or_secret(self, executor, tmp_project):
+        secret_doc = tmp_project / "docs" / "secret.md"
+        secret_doc.write_text("SECRET_SENTINEL_VALUE", encoding="utf-8")
+        codex_dir = tmp_project / ".codex"
+        codex_dir.mkdir()
+        (codex_dir / "project-profile.json").write_text(
+            json.dumps({"guardrailDocs": ["docs/secret.md"]}),
+            encoding="utf-8",
+        )
+        prompt = executor._build_preamble(
+            executor._load_guardrails(),
+            "",
+            "",
+            step={"step": 2, "name": "ui"},
+        )
+        mock_result = MagicMock(returncode=0, stdout="agent output", stderr="")
+
+        with patch("subprocess.run", return_value=mock_result):
+            executor._invoke_codex({"step": 2, "name": "ui"}, prompt)
+
+        saved = (executor._phase_dir / "step2-output.json").read_text(encoding="utf-8")
+        assert "SECRET_SENTINEL_VALUE" not in prompt
+        assert "SECRET_SENTINEL_VALUE" not in saved
+        assert "# Architecture" not in prompt
+        assert "Some content" not in prompt
+
+    def test_run_stops_before_codex_when_reference_is_missing(self, executor, tmp_project, capsys):
+        codex_dir = tmp_project / ".codex"
+        codex_dir.mkdir()
+        (codex_dir / "project-profile.json").write_text(
+            json.dumps({"guardrailDocs": ["docs/missing.md"]}),
+            encoding="utf-8",
+        )
+        calls = []
+        executor._ensure_clean_worktree = lambda: calls.append("clean")
+        executor._checkout_branch = lambda: calls.append("checkout")
+        executor._execute_one_step = lambda *args: calls.append("codex")
+
+        with pytest.raises(SystemExit) as exc_info:
+            with patch.object(ex, "ROOT", tmp_project):
+                executor.run()
+
+        assert exc_info.value.code == 1
+        assert calls == ["clean"]
+        assert "docs/missing.md" in capsys.readouterr().out
 
     def test_nonexistent_step_file_exits(self, executor):
         step = {"step": 99, "name": "nonexistent"}
@@ -682,6 +831,7 @@ class TestVerifyAcceptance:
         (executor._phase_dir / "step2.md").write_text(body, encoding="utf-8")
 
     def test_no_acceptance_section_passes(self, executor):
+        (executor._phase_dir / "step2.md").write_text("# Step 2: UI\n\nUI를 구현하세요.", encoding="utf-8")
         assert executor._verify_acceptance(2) is None
 
     def test_runs_commands_and_passes(self, executor):

@@ -40,6 +40,10 @@ DEFAULT_CODEX_EFFORT = "medium"
 CODEX_BIN = resolve_codex_bin()
 
 
+class GuardrailReferenceError(RuntimeError):
+    """Raised when a file path required by the progressive prompt is invalid."""
+
+
 @contextlib.contextmanager
 def progress_indicator(label: str):
     """터미널 진행 표시기. with 문으로 사용하며 .elapsed 로 경과 시간을 읽는다."""
@@ -122,8 +126,12 @@ class StepExecutor:
         self._print_header()
         self._check_blockers()
         self._ensure_clean_worktree()
+        try:
+            guardrails = self._load_guardrails()
+        except GuardrailReferenceError as exc:
+            print(f"\n  ERROR: {exc}")
+            sys.exit(1)
         self._checkout_branch()
-        guardrails = self._load_guardrails()
         command_context = self._load_command_context()
         self._ensure_created_at()
         step_only = self._step_number is not None or self._next_step_only
@@ -250,55 +258,111 @@ class StepExecutor:
 
     # --- guardrails & context ---
 
+    def _project_root(self) -> Path:
+        return Path(getattr(self, "_root", ROOT))
+
     def _load_guardrails(self) -> str:
-        sections = []
-        agents_md = ROOT / "AGENTS.md"
-        if agents_md.exists():
-            sections.append(f"## 프로젝트 규칙 (AGENTS.md)\n\n{agents_md.read_text(encoding='utf-8')}")
         phase_dir = getattr(self, "_phase_dir", None)
-        phase_readme = phase_dir / "README.md" if phase_dir is not None else None
-        if phase_readme is not None and phase_readme.exists():
-            sections.append(
-                f"## 현재 Phase README ({getattr(self, '_phase_dir_name', phase_readme.parent.name)}/README.md)\n\n"
-                f"{phase_readme.read_text(encoding='utf-8')}"
+        if phase_dir is None:
+            return ""
+
+        entries: list[tuple[str, object]] = [("프로젝트 규칙", "AGENTS.md")]
+        phase_readme = phase_dir / "README.md"
+        phase_name = getattr(self, "_phase_dir_name", phase_readme.parent.name)
+        entries.append(("현재 Phase README", f"phases/{phase_name}/README.md"))
+
+        profile = checks.load_project_profile(self._project_root())
+        if "guardrailDocs" in profile:
+            profile_docs = profile.get("guardrailDocs")
+            if not isinstance(profile_docs, list):
+                raise GuardrailReferenceError(
+                    ".codex/project-profile.json의 guardrailDocs는 저장소 상대 경로 목록이어야 합니다."
+                )
+            if profile_docs:
+                selected_docs = profile_docs
+                selection_source = "guardrailDocs"
+            else:
+                selected_docs = self._referenced_doc_paths()
+                if not selected_docs:
+                    selected_docs = self._default_guardrail_doc_paths()
+                selection_source = "자동 선택"
+        else:
+            selected_docs = self._referenced_doc_paths()
+            if not selected_docs:
+                selected_docs = self._default_guardrail_doc_paths()
+            selection_source = "phase 문서 참조"
+
+        entries.extend((f"{selection_source} 경로", rel) for rel in selected_docs)
+        references: list[tuple[str, str]] = []
+        errors: list[str] = []
+        seen: set[str] = set()
+        for label, raw_path in entries:
+            normalized, error = self._validate_reference_path(raw_path, label=label)
+            if error:
+                errors.append(error)
+                continue
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            references.append((label, normalized))
+
+        if errors:
+            raise GuardrailReferenceError(
+                "guardrail 참조 경로 검증 실패:\n" + "\n".join(f"- {error}" for error in errors)
             )
 
-        # 첨부 문서 선택 우선순위:
-        # 1. .codex/project-profile.json의 guardrailDocs (명시 고정 목록)
-        # 2. phase README/step 문서가 참조하는 docs/*.md만 (기본 — 프롬프트 크기 통제)
-        # 3. 참조가 하나도 없으면 docs 전체 (안전 fallback)
-        profile_docs = checks.load_project_profile(ROOT).get("guardrailDocs")
-        if isinstance(profile_docs, list) and profile_docs:
-            for rel in profile_docs:
-                if not isinstance(rel, str):
-                    continue
-                doc = ROOT / rel
-                if doc.is_file():
-                    sections.append(f"## {rel}\n\n{doc.read_text(encoding='utf-8')}")
-            return "\n\n---\n\n".join(sections) if sections else ""
+        lines = [
+            "## 직접 읽어야 할 경로",
+            "",
+            "작업을 시작하기 전에 아래 경로를 저장소에서 직접 읽어라. "
+            "문서 본문은 이 prompt에 첨부되지 않습니다.",
+            "",
+        ]
+        lines.extend(f"- `{path}` ({label})" for label, path in references)
+        return "\n".join(lines)
 
-        referenced = self._referenced_doc_paths()
-        if referenced:
-            for rel in referenced:
-                sections.append(f"## {rel}\n\n{(ROOT / rel).read_text(encoding='utf-8')}")
-            sections.append(
-                "## 추가 문서\n\n"
-                "여기 첨부되지 않은 docs/*.md와 docs/adr/*.md는 필요할 때 직접 읽어라."
-            )
-            return "\n\n---\n\n".join(sections)
+    def _default_guardrail_doc_paths(self) -> list[str]:
+        """Return a small canonical document set without reading its contents into the prompt."""
+        defaults = (
+            "docs/PRD.md",
+            "docs/ARCHITECTURE.md",
+            "docs/ADR.md",
+            "docs/COMMANDS.md",
+            "docs/SCOPE_CHANGE_CHECKLIST.md",
+        )
+        root = self._project_root()
+        return [rel for rel in defaults if (root / rel).is_file()]
 
-        docs_dir = ROOT / "docs"
-        if docs_dir.is_dir():
-            for doc in sorted(docs_dir.glob("*.md")):
-                sections.append(f"## {doc.stem}\n\n{doc.read_text(encoding='utf-8')}")
-            adr_dir = docs_dir / "adr"
-            if adr_dir.is_dir():
-                for doc in sorted(adr_dir.glob("*.md")):
-                    sections.append(f"## adr/{doc.stem}\n\n{doc.read_text(encoding='utf-8')}")
-        return "\n\n---\n\n".join(sections) if sections else ""
+    def _validate_reference_path(self, raw_path: object, *, label: str) -> tuple[str | None, str | None]:
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            return None, f"{label}: 비어 있지 않은 저장소 상대 경로가 필요합니다."
+
+        raw = raw_path.strip().replace("\\", "/")
+        candidate_path = Path(raw)
+        if candidate_path.is_absolute():
+            return None, f"{label} `{raw_path}`: 저장소 상대 경로가 아닙니다."
+
+        root = self._project_root().resolve()
+        candidate = (root / candidate_path).resolve()
+        if not candidate.is_relative_to(root):
+            return None, f"{label} `{raw_path}`: 저장소 밖의 경로는 읽을 수 없습니다."
+        if not candidate.exists():
+            return None, f"{label} `{raw_path}`: 경로가 존재하지 않습니다."
+        if not candidate.is_file() and not candidate.is_dir():
+            return None, f"{label} `{raw_path}`: 파일 또는 디렉터리가 아닙니다."
+
+        try:
+            if candidate.is_file():
+                candidate.read_text(encoding="utf-8")
+            else:
+                next(candidate.iterdir(), None)
+        except (OSError, UnicodeError) as exc:
+            return None, f"{label} `{raw_path}`: 읽을 수 없습니다 ({exc})."
+
+        return candidate.relative_to(root).as_posix(), None
 
     def _referenced_doc_paths(self) -> list[str]:
-        """phase README와 step 문서가 참조하는 docs 경로(존재하는 것만)를 모은다."""
+        """phase 문서가 참조하는 docs 경로를 모은다; 존재 검사는 호출자가 담당한다."""
         phase_dir = getattr(self, "_phase_dir", None)
         if phase_dir is None or not phase_dir.is_dir():
             return []
@@ -308,15 +372,22 @@ class StepExecutor:
         for source in sources:
             if not source.exists():
                 continue
-            for rel in self.DOC_REFERENCE_RE.findall(source.read_text(encoding="utf-8")):
-                if rel in seen or not (ROOT / rel).is_file():
+            try:
+                content = source.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                rel_source = source.resolve().relative_to(self._project_root().resolve()).as_posix()
+                raise GuardrailReferenceError(
+                    f"guardrail 참조 소스 `{rel_source}`를 읽을 수 없습니다 ({exc})."
+                ) from exc
+            for rel in self.DOC_REFERENCE_RE.findall(content):
+                if rel in seen:
                     continue
                 seen.add(rel)
                 referenced.append(rel)
         return sorted(referenced)
 
     def _load_command_context(self) -> str:
-        selected = checks.collect_checks(ROOT, "manual")
+        selected = checks.collect_checks(self._project_root(), "manual")
         if not selected:
             return (
                 "## 프로젝트 검증 명령\n\n"
@@ -345,12 +416,100 @@ class StepExecutor:
             return ""
         return "## 이전 Step 산출물\n\n" + "\n".join(lines) + "\n\n"
 
+    @staticmethod
+    def _section_text(markdown: str, heading: str) -> str:
+        lines: list[str] = []
+        in_section = False
+        for raw in markdown.splitlines():
+            line = raw.strip()
+            if line.startswith("## "):
+                if in_section:
+                    break
+                in_section = line == heading
+                continue
+            if in_section:
+                lines.append(raw.rstrip())
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _step_read_paths(markdown: str) -> list[str]:
+        section = StepExecutor._section_text(markdown, "## 읽어야 할 파일")
+        paths: list[str] = []
+        for raw in section.splitlines():
+            line = raw.strip()
+            if not line.startswith("-"):
+                continue
+            value = line[1:].strip()
+            if value.startswith("`") and "`" in value[1:]:
+                value = value[1 : value.find("`", 1)]
+            else:
+                value = value.split(maxsplit=1)[0] if value else ""
+            value = value.strip().replace("\\", "/").lstrip("/")
+            if value and value not in paths:
+                paths.append(value)
+        return paths
+
+    def _read_step_definition(self, step: dict) -> tuple[str, str]:
+        step_num = step.get("step", "?")
+        step_file = self._phase_dir / f"step{step_num}.md"
+        rel_path = f"phases/{self._phase_dir_name}/step{step_num}.md"
+        if not step_file.exists():
+            raise GuardrailReferenceError(f"현재 step 참조 `{rel_path}`: 경로가 존재하지 않습니다.")
+        try:
+            return rel_path, step_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise GuardrailReferenceError(
+                f"현재 step 참조 `{rel_path}`를 읽을 수 없습니다 ({exc})."
+            ) from exc
+
+    def _step_contract(self, step: dict) -> tuple[str, list[str], str, str, str]:
+        step_path, markdown = self._read_step_definition(step)
+        read_paths = [step_path, *self._step_read_paths(markdown)]
+        errors: list[str] = []
+        normalized_paths: list[str] = []
+        seen: set[str] = set()
+        for raw_path in read_paths:
+            normalized, error = self._validate_reference_path(raw_path, label="step 읽기 경로")
+            if error:
+                errors.append(error)
+                continue
+            if normalized not in seen:
+                seen.add(normalized)
+                normalized_paths.append(normalized)
+        if errors:
+            raise GuardrailReferenceError(
+                "step 참조 경로 검증 실패:\n" + "\n".join(f"- {error}" for error in errors)
+            )
+
+        objective = self._section_text(markdown, "## 작업")
+        acceptance = self._section_text(markdown, "## 인수 기준")
+        constraints = self._section_text(markdown, "## 금지사항")
+        return step_path, normalized_paths, objective, acceptance, constraints
+
+    @staticmethod
+    def _with_step_read_paths(guardrails: str, paths: list[str]) -> str:
+        result = guardrails.rstrip()
+        if "## 직접 읽어야 할 경로" not in result:
+            result = (
+                f"{result}\n\n" if result else ""
+            ) + "## 직접 읽어야 할 경로\n\n"
+        extras = [
+            f"- `{path}` (step 문서가 지정한 참조)"
+            for path in paths
+            if f"`{path}`" not in result
+        ]
+        if extras:
+            result = f"{result}\n" + "\n".join(extras)
+        return result
+
     def _build_preamble(
         self,
         guardrails: str,
         step_context: str,
         command_context: str = "",
         prev_error: Optional[str] = None,
+        *,
+        step: Optional[dict] = None,
     ) -> str:
         commit_example = self.FEAT_MSG.format(
             phase=self._phase_name, num="N", name="<step-name>"
@@ -361,15 +520,33 @@ class StepExecutor:
                 "\n## 이전 시도 실패 - 아래 에러를 반드시 참고하여 수정하라\n\n"
                 f"{prev_error}\n\n---\n\n"
             )
+        objective = ""
+        acceptance = ""
+        constraints = ""
+        if step is not None:
+            _, read_paths, objective, acceptance, constraints = self._step_contract(step)
+            guardrails = self._with_step_read_paths(guardrails, read_paths)
+
+        step_contract = ""
+        if step is not None:
+            step_contract = (
+                "## Objective\n\n"
+                f"Phase `{self._phase_name}` Step {step.get('step', '?')} `{step.get('name', 'unknown')}`\n\n"
+                f"{objective or '현재 step의 작업 목표는 step 파일을 직접 읽어 확인하라.'}\n\n"
+                "## Acceptance criteria\n\n"
+                f"{acceptance or '현재 step 파일의 인수 기준과 검증 명령을 직접 읽고 모두 통과시켜라.'}\n\n"
+            )
+            constraints = constraints or "- 현재 step 파일에 명시된 범위를 벗어나지 마라."
+            step_contract += f"## Hard constraints\n\n{constraints}\n\n"
         return (
             f"당신은 {self._project} 프로젝트의 개발자입니다. 아래 step을 수행하세요.\n\n"
             f"{guardrails}\n\n---\n\n"
-            f"{step_context}{retry_section}"
+            f"{step_contract}{step_context}{retry_section}"
             f"{command_context}"
-            "## 작업 규칙\n\n"
+            "## Hard constraints / 작업 규칙\n\n"
             "1. 이전 step에서 작성된 코드를 확인하고 일관성을 유지하라.\n"
-            "2. 이 step에 명시된 작업만 수행하라. 추가 기능이나 파일을 만들지 마라.\n"
-            "3. 기존 테스트를 깨뜨리지 마라.\n"
+            "2. 이 step에 명시된 작업만 수행하라. 미래 step 기능이나 추가 파일을 만들지 마라.\n"
+            "3. 기존 테스트를 깨뜨리지 말고 credential 값이나 secret을 prompt와 로그에 넣지 마라.\n"
             "4. AC(Acceptance Criteria)와 프로젝트 검증 명령을 직접 실행하라.\n"
             f"5. /phases/{self._phase_dir_name}/index.json의 해당 step status를 업데이트하라:\n"
             '   - AC 통과 -> "completed" + "summary" 필드에 이 step의 산출물을 한 줄로 요약\n'
@@ -389,7 +566,15 @@ class StepExecutor:
             print(f"  ERROR: {step_file} not found")
             sys.exit(1)
 
-        prompt = preamble + step_file.read_text(encoding="utf-8")
+        try:
+            step_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            print(f"  ERROR: 현재 step 참조 `{step_file}`를 읽을 수 없습니다 ({exc}).")
+            sys.exit(1)
+
+        # step 문서는 _build_preamble에서 필요한 섹션만 추려 전달한다.
+        # 전체 문서 본문을 다시 붙이면 progressive disclosure 계약을 깨뜨린다.
+        prompt = preamble
         cmd = codex_base_cmd(self._codex_effort)
         if self._unsafe:
             cmd.append("--dangerously-bypass-approvals-and-sandbox")
@@ -481,7 +666,17 @@ class StepExecutor:
         for attempt in range(1, self.MAX_RETRIES + 1):
             index = self._read_json(self._index_file)
             step_context = self._build_step_context(index)
-            preamble = self._build_preamble(guardrails, step_context, command_context, prev_error)
+            try:
+                preamble = self._build_preamble(
+                    guardrails,
+                    step_context,
+                    command_context,
+                    prev_error,
+                    step=step,
+                )
+            except GuardrailReferenceError as exc:
+                print(f"\n  ERROR: {exc}")
+                sys.exit(1)
 
             tag = f"Step {step_num}/{self._total - 1} ({done} done): {step_name}"
             if attempt > 1:
