@@ -23,6 +23,7 @@ from typing import Optional
 
 import checks
 import guard
+import task_schema
 from codex_common import (
     ALLOWED_CODEX_EFFORTS,
     CODEX_EXEC_TIMEOUT,
@@ -115,10 +116,11 @@ class StepExecutor:
             print(f"ERROR: {self._index_file} not found")
             sys.exit(1)
 
-        idx = self._read_json(self._index_file)
+        idx = self._read_phase_index()
         self._project = idx.get("project", "project")
         self._phase_name = idx.get("phase", phase_dir_name)
         self._total = len(idx["steps"])
+        self._schema_version = idx.schema_version
         if self._branch_name is None:
             self._branch_name = f"codex/{self._phase_name}"
 
@@ -162,7 +164,15 @@ class StepExecutor:
 
     @staticmethod
     def _write_json(p: Path, data: dict):
+        if isinstance(data, task_schema.NormalizedPhaseIndex):
+            data = data.to_payload()
         p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _read_phase_index(self) -> task_schema.NormalizedPhaseIndex:
+        return task_schema.load_phase_index(
+            self._index_file,
+            display_path=f"phases/{self._phase_dir_name}/index.json",
+        )
 
     # --- git ---
 
@@ -409,7 +419,7 @@ class StepExecutor:
     def _build_step_context(index: dict) -> str:
         lines = [
             f"- Step {s['step']} ({s['name']}): {s['summary']}"
-            for s in index["steps"]
+            for s in task_schema.tasks_from_index(index)
             if s["status"] == "completed" and s.get("summary")
         ]
         if not lines:
@@ -482,6 +492,8 @@ class StepExecutor:
             )
 
         objective = self._section_text(markdown, "## 작업")
+        if step.get("objective"):
+            objective = str(step["objective"])
         acceptance = self._section_text(markdown, "## 인수 기준")
         constraints = self._section_text(markdown, "## 금지사항")
         return step_path, normalized_paths, objective, acceptance, constraints
@@ -538,6 +550,9 @@ class StepExecutor:
             )
             constraints = constraints or "- 현재 step 파일에 명시된 범위를 벗어나지 마라."
             step_contract += f"## Hard constraints\n\n{constraints}\n\n"
+            metadata = self._task_metadata(step)
+            if metadata:
+                step_contract += f"## Task metadata\n\n{metadata}\n\n"
         return (
             f"당신은 {self._project} 프로젝트의 개발자입니다. 아래 step을 수행하세요.\n\n"
             f"{guardrails}\n\n---\n\n"
@@ -555,6 +570,20 @@ class StepExecutor:
             "6. 모든 변경사항을 커밋하라:\n"
             f"   {commit_example}\n\n---\n\n"
         )
+
+    @staticmethod
+    def _task_metadata(step: dict) -> str:
+        """Render v2 outcome metadata without changing the v1 prompt shape."""
+        if "id" not in step:
+            return ""
+        dependencies = step.get("dependsOn", [])
+        dependency_text = ", ".join(f"`{item}`" for item in dependencies) if dependencies else "없음"
+        lines = [f"- id: `{step['id']}`", f"- dependsOn: {dependency_text}"]
+        if step.get("issue") is not None:
+            lines.append(f"- issue: #{step['issue']}")
+        if step.get("risk") is not None:
+            lines.append(f"- risk: {step['risk']}")
+        return "\n".join(lines)
 
     # --- Codex 호출 ---
 
@@ -634,7 +663,7 @@ class StepExecutor:
         print(f"{'='*60}")
 
     def _check_blockers(self):
-        index = self._read_json(self._index_file)
+        index = self._read_phase_index()
         for s in reversed(index["steps"]):
             if s["status"] == "error":
                 print(f"\n  ✗ Step {s['step']} ({s['name']}) failed.")
@@ -650,7 +679,7 @@ class StepExecutor:
                 break
 
     def _ensure_created_at(self):
-        index = self._read_json(self._index_file)
+        index = self._read_phase_index()
         if "created_at" not in index:
             index["created_at"] = self._stamp()
             self._write_json(self._index_file, index)
@@ -660,11 +689,11 @@ class StepExecutor:
     def _execute_single_step(self, step: dict, guardrails: str, command_context: str) -> bool:
         """단일 step 실행 (재시도 포함). 완료되면 True, 실패/차단이면 False."""
         step_num, step_name = step["step"], step["name"]
-        done = sum(1 for s in self._read_json(self._index_file)["steps"] if s["status"] == "completed")
+        done = sum(1 for s in self._read_phase_index()["steps"] if s["status"] == "completed")
         prev_error = None
 
         for attempt in range(1, self.MAX_RETRIES + 1):
-            index = self._read_json(self._index_file)
+            index = self._read_phase_index()
             step_context = self._build_step_context(index)
             try:
                 preamble = self._build_preamble(
@@ -686,7 +715,7 @@ class StepExecutor:
                 self._invoke_codex(step, preamble)
                 elapsed = int(pi.elapsed)
 
-            index = self._read_json(self._index_file)
+            index = self._read_phase_index()
             status = next((s.get("status", "pending") for s in index["steps"] if s["step"] == step_num), "pending")
             ts = self._stamp()
 
@@ -749,7 +778,7 @@ class StepExecutor:
 
     def _execute_all_steps(self, guardrails: str, command_context: str):
         while True:
-            index = self._read_json(self._index_file)
+            index = self._read_phase_index()
             pending = next((s for s in index["steps"] if s["status"] == "pending"), None)
             if pending is None:
                 print("\n  All steps completed!")
@@ -771,7 +800,7 @@ class StepExecutor:
             return False
 
         step_num = step["step"]
-        index = self._read_json(self._index_file)
+        index = self._read_phase_index()
         for s in index["steps"]:
             if s["step"] == step_num and "started_at" not in s:
                 s["started_at"] = self._stamp()
@@ -782,7 +811,7 @@ class StepExecutor:
         return True
 
     def _select_single_step(self) -> Optional[dict]:
-        index = self._read_json(self._index_file)
+        index = self._read_phase_index()
         steps = index["steps"]
         pending = next((s for s in steps if s["status"] == "pending"), None)
         if pending is None:
@@ -833,7 +862,7 @@ class StepExecutor:
         return None
 
     def _has_pending_steps(self) -> bool:
-        index = self._read_json(self._index_file)
+        index = self._read_phase_index()
         return any(s.get("status") == "pending" for s in index["steps"])
 
     def _push_current_branch(self):
@@ -874,7 +903,7 @@ class StepExecutor:
             sys.exit(result.returncode)
 
     def _finalize(self):
-        index = self._read_json(self._index_file)
+        index = self._read_phase_index()
         index["completed_at"] = self._stamp()
         self._write_json(self._index_file, index)
         self._update_top_index("completed")
@@ -929,16 +958,20 @@ def main(argv: list[str] | None = None):
     except ValueError as exc:
         parser.error(str(exc))
 
-    StepExecutor(
-        args.phase_dir,
-        auto_push=args.push,
-        unsafe=args.unsafe,
-        branch_name=args.branch,
-        step_number=args.step,
-        next_step_only=args.next_step_only,
-        codex_effort=args.codex_effort,
-        allow_xhigh=args.allow_xhigh,
-    ).run()
+    try:
+        StepExecutor(
+            args.phase_dir,
+            auto_push=args.push,
+            unsafe=args.unsafe,
+            branch_name=args.branch,
+            step_number=args.step,
+            next_step_only=args.next_step_only,
+            codex_effort=args.codex_effort,
+            allow_xhigh=args.allow_xhigh,
+        ).run()
+    except task_schema.TaskSchemaError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

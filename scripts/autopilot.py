@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import guard
+import task_schema
 from codex_common import (
     ALLOWED_CODEX_EFFORTS,
     CODEX_ENV_CONFIG,
@@ -406,6 +407,10 @@ class AutopilotRunner:
                 + status
             )
 
+        # Validate the whole phase index before authentication, branch sync or
+        # any step can reach execute.py/Codex. This is intentionally a shape
+        # and reference check only; task selection remains list-order serial.
+        self._load_phase_index()
         self._gh("auth", "status")
         self._git("remote", "get-url", "origin")
         self._sync_base()
@@ -431,8 +436,12 @@ class AutopilotRunner:
     def _phase_index_path(self) -> Path:
         return self.root / "phases" / self.phase / "index.json"
 
-    def _load_phase_index(self) -> dict:
-        return json.loads(self._phase_index_path().read_text(encoding="utf-8"))
+    def _load_phase_index(self) -> task_schema.NormalizedPhaseIndex:
+        path = self._phase_index_path()
+        try:
+            return task_schema.load_phase_index(path, display_path=path.relative_to(self.root))
+        except task_schema.TaskSchemaError as exc:
+            raise AutopilotError(str(exc)) from exc
 
     def _next_pending_step(self) -> dict | None:
         index = self._load_phase_index()
@@ -527,6 +536,8 @@ class AutopilotRunner:
         return next((s for s in index.get("steps", []) if s.get("step") == step_num), None)
 
     def _step_task_summary(self, step: dict) -> str:
+        if step.get("objective"):
+            return str(step["objective"])
         path = self.root / "phases" / self.phase / f"step{step['step']}.md"
         if not path.exists():
             return step["name"]
@@ -939,13 +950,19 @@ class AutopilotRunner:
     def _codex_review_prompt(self, step: dict) -> str:
         step_num = step.get("step", "?")
         step_name = step.get("name", "unknown")
+        task_metadata = ""
+        if step.get("id"):
+            task_metadata = (
+                f" Task id is `{step['id']}`; treat `dependsOn`, `issue`, and `risk` as metadata only."
+                " Do not change serial/list-order execution in this step."
+            )
         phase_readme = f"phases/{self.phase}/README.md"
         step_file = f"phases/{self.phase}/step{step_num}.md"
         python_bin = str(Path(sys.executable))
         return (
             "Read-only review only. Do not modify files. "
             f"Review the current branch diff against origin/{self.base} for Harness project rules. "
-            f"Current Harness step is Step {step_num} `{step_name}`. "
+            f"Current Harness step is Step {step_num} `{step_name}`.{task_metadata} "
             "Ignore generated review-failure records under issues/**; they are audit logs, not implementation changes. "
             f"Check {phase_readme} and {step_file} first, then AGENTS.md, docs/PRD.md, "
             "docs/ARCHITECTURE.md, docs/ADR.md, docs/adr/, and docs/COMMANDS.md. "

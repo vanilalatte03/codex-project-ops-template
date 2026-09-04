@@ -36,6 +36,11 @@
 않습니다. 이름이 충돌하면 업그레이드 전에 프로젝트 스킬 이름을 바꾸거나 공통
 스킬 편입 여부를 결정합니다.
 
+`docs/TASK_SCHEMA.md`는 phase index 계약을 설명하는 기준 문서지만 `docs/` 아래
+프로젝트 소유 파일로 취급합니다. `scripts/upgrade.py`는 이를 포함한 프로젝트의
+`docs/`, `phases/`, `issues/`, `archive/`를 자동 덮어쓰지 않습니다. 기존 인스턴스는
+계약을 확인한 뒤 필요한 문서 변경을 수동으로 검토합니다.
+
 `.github/workflows/template-ci.yml`은 템플릿 repo 전용 검증입니다. 실제 프로젝트
 인스턴스에는 복사하지 않고, 이미 복사했다면 삭제합니다. 실제 프로젝트의 CI는
 `docs/COMMANDS.md`에 확정한 `lint`, `test`, `build` 명령 기준으로 별도 작성합니다.
@@ -71,6 +76,23 @@
 
 수동으로 복사하려면 위 "파일 소유 구분" 표를 그대로 따르고, 마지막에
 `templateVersion`을 직접 갱신합니다.
+
+## phase index migration
+
+Harness 업그레이드는 phase index를 자동으로 v1에서 v2로 변환하지 않습니다.
+`phases/{phase}/index.json`, `stepN.md`, README와 실행 기록은 프로젝트 소유이며,
+템플릿의 `scripts/task_schema.py`는 두 형식을 읽고 검증만 합니다. v2로 전환하려는
+프로젝트는 별도 opt-in 작업에서 다음 순서를 지킵니다.
+
+1. 원본 phase/index를 백업하고 v1 task와 새 v2 `id`의 매핑을 확정합니다.
+2. `objective`, `dependsOn`, `issue`, `risk`를 dry-run으로 검토하고 누락된
+   dependency와 companion 문서를 확인합니다.
+3. validator, 전체 테스트와 phase 문서 검증을 통과시킨 뒤 사용자 승인을 받습니다.
+4. 승인된 변경만 별도 commit으로 적용하고, 실패하면 백업한 v1 원본으로 복구합니다.
+
+읽기 중 생성되는 v2의 `step`/`name` alias는 메모리 값이며 JSON에 저장되지
+않습니다. `dependsOn`은 현재 직렬 실행 순서를 바꾸지 않고, DAG scheduler·cycle
+처리·parallelism은 후속 기능으로 남겨 둡니다.
 
 ## 템플릿 repo에서 버전 올리기
 

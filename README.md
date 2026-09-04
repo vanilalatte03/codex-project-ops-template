@@ -88,13 +88,18 @@ python scripts/doctor.py --instance
   `TEMPLATE_VERSION`(`scripts/codex_common.py`)과 다름
 - `test` 또는 `build` 명령이 `docs/COMMANDS.md`와 project profile 양쪽에서 준비되지 않음
 - `git core.hooksPath`가 `.githooks`로 설정되어 있지 않음
+- phase-local `index.json`의 task schema가 깨져 있음
 
 ## ② 설계 — phase/step 나누기
 
 doctor가 통과한 뒤 Plan Mode에서 Harness skill로 phase/step 설계안을 만듭니다.
 프롬프트는 [guides/PROMPTS.md](guides/PROMPTS.md)의 "운영: phase/step 설계"를
 사용합니다. 설계안을 확정하면 MVP가 `phases/{phase}/README.md`, `index.json`,
-`stepN.md`로 나뉩니다.
+`stepN.md`로 나뉩니다. `index.json`은 기존 v1 `steps[]`와 outcome 중심 v2
+`tasks[]`를 지원합니다. 두 형식의 필드와 migration 경계는
+[docs/TASK_SCHEMA.md](docs/TASK_SCHEMA.md)에 있고, 실행 가능한 예시는
+[phases/0-example/](phases/0-example/)와 [phases/0-example-v2/](phases/0-example-v2/)
+에서 확인할 수 있습니다.
 
 ## ③ 실행
 
@@ -108,7 +113,9 @@ python scripts/execute.py {phase-name} --push           # 실행 후 push
 
 ### autopilot.py — step별 PR 루프
 
-실행 전 아래 사전 조건을 먼저 확인합니다.
+실행 전 아래 사전 조건을 먼저 확인합니다. v1/v2 phase index는 GitHub 인증이나
+Codex 호출 전에 공통 validator로 확인하며, v2의 `dependsOn`은 현재 실행 순서를
+바꾸지 않는 참조 메타데이터입니다.
 
 - 문서와 phase 파일 변경이 별도 commit으로 완료되어 있음
 - `git status --short`가 비어 있는 clean worktree 상태임
@@ -148,13 +155,13 @@ autopilot은 step마다 아래 루프를 반복합니다.
 | 영역 | 경로 | 역할 |
 | --- | --- | --- |
 | 규칙 | `AGENTS.md` | Codex가 따르는 100줄 안팎의 프로젝트 운영 규칙 |
-| 프로젝트 문서 | `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/ADR.md`, `docs/adr/`, `docs/COMMANDS.md`, `docs/SCOPE_CHANGE_CHECKLIST.md` | MVP 범위, 구조, 기술 결정, 검증 명령, 범위 변경 체크리스트 |
+| 프로젝트 문서 | `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/ADR.md`, `docs/adr/`, `docs/COMMANDS.md`, `docs/SCOPE_CHANGE_CHECKLIST.md`, `docs/TASK_SCHEMA.md` | MVP 범위, 구조, 기술 결정, 검증 명령, 범위 변경과 phase task schema |
 | 가이드 | `guides/PROMPTS.md`, `guides/CONFIGURATION.md`, `guides/UPGRADE.md` | 프롬프트 모음, 설정 레퍼런스, 업그레이드 절차 |
 | Codex 설정 | `.codex/` | hook 설정, project profile, scope rules |
 | Hook | `.githooks/pre-commit`, `.codex/hooks/` | 커밋 전 검증, cross-platform hook wrapper |
 | Skill | `.agents/skills/harness`, `.agents/skills/review` | phase/step 설계·실행, 문서 기준 자체 리뷰 워크플로우 |
-| 스크립트 | `scripts/`, `scripts/tests/` | `execute.py`, `autopilot.py`, `checks.py`, `doctor.py`, `guard.py`, `upgrade.py`, `codex_common.py`, Harness 스크립트 테스트 |
-| 작업 공간 | `phases/`, `issues/`, `archive/` | phase 문서(예시: `phases/0-example/`), 실패 기록, 직전 MVP 요약 |
+| 스크립트 | `scripts/`, `scripts/tests/` | `execute.py`, `autopilot.py`, `checks.py`, `doctor.py`, `task_schema.py`, `guard.py`, `upgrade.py`, `codex_common.py`, Harness 스크립트 테스트 |
+| 작업 공간 | `phases/`, `issues/`, `archive/` | v1/v2 phase 문서(예시: `phases/0-example/`, `phases/0-example-v2/`), 실패 기록, 직전 MVP 요약 |
 | CI | `.github/workflows/template-ci.yml` | macOS/Linux/Windows 템플릿 검증 (인스턴스에는 복사하지 않음) |
 | 메타 | `LICENSE`, `CHANGELOG.md` | MIT 라이선스, `templateVersion` 기준 변경 내역 |
 

@@ -111,13 +111,50 @@ python scripts/checks.py --stage manual
 }
 ```
 
+phase index의 전체 v1/v2 계약은 루트 [`docs/TASK_SCHEMA.md`](../../../docs/TASK_SCHEMA.md)에
+둔다. 기존 파일을 보존해야 하므로 이 skill의 기본 예시는 v1 `steps[]` 형식이며,
+`phases/0-example/index.json`은 변경하지 않는 호환 fixture다. outcome 중심 task가
+필요한 새 phase는 다음 v2 모양을 사용한다:
+
+```json
+{
+  "schemaVersion": 2,
+  "project": "<프로젝트명>",
+  "phase": "<작업명>",
+  "tasks": [
+    {
+      "id": "api-layer",
+      "objective": "사용자가 확인할 결과를 만든다.",
+      "dependsOn": [],
+      "issue": 123,
+      "risk": "medium",
+      "status": "pending"
+    }
+  ]
+}
+```
+
+v1은 `steps[].step`, `steps[].name`, `steps[].status`를 사용하고, v2는
+`id`·`objective`·`status`를 필수로 하며 `dependsOn`·`issue`·`risk`를 선택으로
+둔다. 두 형식의 status는 `pending`, `completed`, `error`, `blocked`로 같다.
+`scripts/task_schema.py`가 형식을 구분하고 필수 필드, 타입, 중복 id, self/unknown
+dependency를 path/reason과 함께 Codex 호출 전에 검증한다. v2의 `dependsOn`은 이
+단계에서 reference metadata이며 list order를 바꾸지 않는다. ready set, cycle,
+DAG scheduler와 parallelism은 후속 #22 범위다.
+
+validator가 v2 task에 노출하는 배열 위치 `step`과 id 기반 `name`은 현재
+serial executor와 `stepN.md`를 연결하기 위한 메모리 alias다. 파일을 저장할 때
+`tasks[]` 원형을 유지하며 v1에 v2 필드를 추가하지 않는다. v1→v2 변환은 원본
+백업, dry-run, 검증과 사용자 승인을 포함한 별도 opt-in 작업으로만 수행한다.
+
 규칙:
 
+- 위 v1/v2 discriminator와 필드 규칙을 지킨다.
 - `project`: 프로젝트 이름이며 보통 `AGENTS.md`에서 가져온다.
 - `phase`: 디렉터리 이름과 일치하는 작업 이름이다.
-- `steps[].step`: 0부터 시작하는 순번이다.
-- `steps[].name`: kebab-case slug다.
-- `steps[].status`: 초기값은 `pending`이다.
+- v1 `steps[].step`: 0부터 시작하는 순번이다.
+- v1 `steps[].name`: kebab-case slug다.
+- v1/v2 `status`: 초기값은 `pending`이다.
 
 상태 필드:
 
@@ -257,8 +294,9 @@ python scripts/autopilot.py {작업명} --max-review-fixes 2  # phase 전체 구
 python scripts/autopilot.py {작업명} --dry-run --max-steps 1
 ```
 
-`scripts/execute.py`는 브랜치 생성, `AGENTS.md`·phase·관련 문서의 직접 읽기 경로
-검증, 현재 step의 objective/acceptance criteria/hard constraints와 완료된 단계의
+`scripts/execute.py`는 phase index를 `scripts/task_schema.py`로 먼저 검증한 뒤
+브랜치 생성, `AGENTS.md`·phase·관련 문서의 직접 읽기 경로 검증, 현재 step의
+objective/acceptance criteria/hard constraints와 완료된 단계의
 `summary` context 전달, 재시도 피드백, 코드 변경과 메타데이터의 2단계 커밋,
 completed 보고 후 인수 기준 재검증, 타임스탬프 기록, 선택적 push를 처리한다.
 문서 본문은 prompt에 첨부하지 않고 Codex가 저장소에서 직접 읽는다.
@@ -272,4 +310,4 @@ completed 보고 후 인수 기준 재검증, 타임스탬프 기록, 선택적 
 
 phase별 범위 규칙이 필요하면 `phases/{작업명}/scope-rules.json`에 `extraForbidden` 또는 `allowedScopeMessages`를 추가한다. 전역 규칙은 `.codex/scope-rules.json`에 둔다. 템플릿 스크립트에 제품별 금지 키워드를 추가하지 않는다.
 
-복구가 필요하면 `phases/{작업명}/index.json`에서 실패 또는 blocked 상태의 단계를 다시 `pending`으로 바꾸고, `error_message` 또는 `blocked_reason`을 제거한 뒤 원인을 해결하고 페이즈를 다시 실행한다.
+복구가 필요하면 `phases/{작업명}/index.json`에서 실패 또는 blocked 상태의 단계를 다시 `pending`으로 바꾸고, `error_message` 또는 `blocked_reason`을 제거한 뒤 원인을 해결하고 페이즈를 다시 실행한다. v1/v2 index의 validation 오류는 path/reason과 함께 Codex 호출 전에 중단되며, 기존 phase 파일은 자동 migration하지 않는다.

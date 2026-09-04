@@ -50,7 +50,10 @@
 
 세부 목표와 금지사항은 각각의 `stepN.md`를 따른다. 기준선은
 [`BASELINE.md`](BASELINE.md), eval 표본과 계산식은 [`EVALS.md`](EVALS.md), v1
-보존 및 rollback 규칙은 [`COMPATIBILITY.md`](COMPATIBILITY.md)에 고정한다.
+보존 및 rollback 규칙은 [`COMPATIBILITY.md`](COMPATIBILITY.md)에 고정한다. v1/v2
+phase index 필드와 migration 경계는 루트 [`docs/TASK_SCHEMA.md`](../../docs/TASK_SCHEMA.md)에
+고정한다. #16에서는 v2 dependency를 검증하고 표현만 하며, DAG 실행은 #22에서
+다룬다.
 
 ## Step PR 리뷰 원칙
 

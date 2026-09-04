@@ -42,6 +42,7 @@
 | `docs/ARCHITECTURE.md` | 모듈 구조, 데이터 흐름, 외부 의존성, 경계, 테스트 전략 |
 | `docs/ADR.md`, `docs/adr/{NNNN}-*.md` | 새 결정 ADR 추가, 인덱스 연결, 이전 ADR과의 관계 |
 | `docs/COMMANDS.md` | 활성 명령, 새 검증 명령, 폐기된 명령 제거 |
+| `docs/TASK_SCHEMA.md` | phase index v1/v2 필드, status, validation과 migration 경계 |
 | `AGENTS.md` | 목표/기술 스택 문구, CRITICAL 규칙, 디렉터리 규칙이 새 범위와 충돌하지 않는지 |
 
 API 명세, DB 스키마, 화면 설계, 공유/배포 가이드 같은 프로젝트 전용 문서를
@@ -64,7 +65,7 @@ API 명세, DB 스키마, 화면 설계, 공유/배포 가이드 같은 프로�
 | --- | --- |
 | `phases/index.json` | 새 phase dir 추가와 상태 |
 | `phases/{phase}/README.md` | phase 목표, 작업/제외 범위, step 목록, 완료 기준, 검증 명령 |
-| `phases/{phase}/index.json` | step 순서, 이름, 상태 |
+| `phases/{phase}/index.json` | v1 `steps[]` 또는 v2 `tasks[]`의 순서, 필드, 상태와 dependency reference |
 | `phases/{phase}/step{N}.md` | 읽어야 할 파일, 작업, 인수 기준, 검증 절차, 금지사항 |
 | `phases/{phase}/docs-checks.json` | final stage에서 검증할 `required`/`finalRequired`/`forbidden` 마커 |
 
@@ -78,6 +79,7 @@ API 명세, DB 스키마, 화면 설계, 공유/배포 가이드 같은 프로�
 | 파일 | 수정하는 경우 |
 | --- | --- |
 | `scripts/checks.py` | docs-check 엔진, stage 처리, 명령 감지 자체가 바뀔 때 |
+| `scripts/task_schema.py` | phase index schema, 정규화 또는 pre-Codex validation이 바뀔 때 |
 | `scripts/execute.py` | branch/commit/final 검증 같은 phase 실행 workflow가 바뀔 때 |
 | `scripts/autopilot.py` | PR 생성, 자체 리뷰, issue 기록, merge loop workflow가 바뀔 때 |
 | `scripts/tests/test_*.py` | 위 스크립트 동작을 바꾼 경우 |

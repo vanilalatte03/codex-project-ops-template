@@ -54,6 +54,19 @@ profile override가 없으면 `docs/COMMANDS.md`, 그 다음 프로젝트 manife
 - Python: `pyproject.toml`, `uv.lock`, `pytest`, `ruff`
 - Node: `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
 
+## Phase task index
+
+`phases/{phase}/index.json`의 v1 `steps[]`와 v2 `tasks[]` 필드, 공통 status,
+dependency reference와 migration 경계는 [docs/TASK_SCHEMA.md](../docs/TASK_SCHEMA.md)를
+기준으로 합니다. `execute.py`와 `autopilot.py`는 phase index를 먼저 검증하므로
+중복 id, missing/self dependency, 잘못된 타입이나 status는 Codex 호출 전에
+파일·필드 경로와 reason을 출력하고 중단합니다.
+
+v2의 `dependsOn`은 현재 배열 순서의 직렬 실행을 바꾸지 않는 메타데이터입니다.
+ready set, cycle 처리, DAG 스케줄링과 병렬 실행은 후속 범위이며, v1 phase를 v2로
+자동 migration하지 않습니다. 변환이 필요하면 원본 백업과 dry-run, 사용자 승인,
+별도 commit을 갖춘 명시적 opt-in 작업으로 수행합니다.
+
 ## Progressive guardrails
 
 `scripts/execute.py`는 Codex prompt에 AGENTS, phase 문서, 관련 문서의 본문을
