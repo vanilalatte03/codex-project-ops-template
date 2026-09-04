@@ -19,6 +19,7 @@ from execute import ROOT, StepExecutor
 
 DEFAULT_PHASE = "harness-v2-modernization"
 DEFAULT_V1_COMMIT = "eb7192d"
+DEFAULT_STEP = 2
 REPETITIONS = 3
 
 
@@ -34,12 +35,15 @@ def _git_output(*args: str) -> str:
     return result.stdout.strip()
 
 
-def _load_phase_step(phase: str) -> tuple[dict, Path]:
+def _load_phase_step(phase: str, step_number: int | None) -> tuple[dict, Path]:
     phase_dir = ROOT / "phases" / phase
     index = json.loads((phase_dir / "index.json").read_text(encoding="utf-8"))
-    step = next((item for item in index["steps"] if item.get("status") == "pending"), None)
+    if step_number is None:
+        step = next((item for item in index["steps"] if item.get("status") == "pending"), None)
+    else:
+        step = next((item for item in index["steps"] if item.get("step") == step_number), None)
     if step is None:
-        raise RuntimeError(f"phase {phase} has no pending step")
+        raise RuntimeError(f"phase {phase} has no step {step_number}")
     return step, phase_dir / f"step{step['step']}.md"
 
 
@@ -174,8 +178,8 @@ def _codex_version() -> str | None:
     return (result.stdout or result.stderr).strip().splitlines()[0] or None
 
 
-def evaluate(phase: str, v1_commit: str) -> dict:
-    step, step_path = _load_phase_step(phase)
+def evaluate(phase: str, v1_commit: str, step_number: int | None) -> dict:
+    step, step_path = _load_phase_step(phase, step_number)
     v1_prompt = _build_v1_prompt(phase, step, step_path, v1_commit)
     v2_prompt = _build_v2_prompt(phase, step)
     fixture_sha = _fixture_sha256(phase, step_path)
@@ -255,8 +259,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", default=DEFAULT_PHASE)
     parser.add_argument("--v1-commit", default=DEFAULT_V1_COMMIT)
+    parser.add_argument("--step", type=int, default=DEFAULT_STEP)
     args = parser.parse_args(argv)
-    print(json.dumps(evaluate(args.phase, args.v1_commit), ensure_ascii=False, indent=2))
+    print(json.dumps(evaluate(args.phase, args.v1_commit, args.step), ensure_ascii=False, indent=2))
     return 0
 
 
