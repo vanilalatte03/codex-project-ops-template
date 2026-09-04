@@ -34,7 +34,7 @@ EVAL-DEPS는 `unsupported`로 기록하고 성공률 분모에서 제외하되, 
 - concurrency 성능을 보는 EVAL-DEPS 외에는 동시성 1로 실행한다.
 - 동일 입력과 동일 gate를 사용하며 실패한 실행을 결과 집계에서 삭제하지 않는다.
 - 사전 설정, dependency 설치, runner 준비 시간은 end-to-end wall time에 포함할지
-  `setup_included`로 명시한다. v1/v2 비교에서는 같은 정책을 사용한다.
+  `setupIncluded`로 명시한다. v1/v2 비교에서는 같은 정책을 사용한다.
 
 ## 지표와 계산식
 
@@ -44,10 +44,10 @@ EVAL-DEPS는 `unsupported`로 기록하고 성공률 분모에서 제외하되, 
 | --- | --- |
 | 성공률 | `성공한 eligible 실행 수 / eligible 실행 수 × 100`. 모든 필수 AC, scope, review, CI가 통과하고 기대 terminal status와 diff를 만족해야 성공이다. |
 | first-pass 검증률 | `구현 시도 1회에서 자동 fix 없이 모든 gate를 통과한 실행 수 / eligible 실행 수 × 100`. 첫 실패 뒤 성공은 포함하지 않는다. |
-| 재시도 횟수 | 실행별 `implementation_retry_count`와 `review_fix_count`를 따로 기록하고 합계를 함께 제공한다. 최초 시도는 재시도에 포함하지 않는다. |
+| 재시도 횟수 | 실행별 `implementationRetryCount`와 `reviewFixCount`를 따로 기록하고 합계를 함께 제공한다. 최초 시도는 재시도에 포함하지 않는다. |
 | wall time | monotonic clock으로 orchestration 시작부터 terminal state까지 초 단위로 기록한다. 시나리오별 median과 p95를 보고하며 표본 3개일 때 p95는 최댓값으로 표기한다. |
 | 사람 개입 횟수 | 실행 중 진행을 위해 사람이 내린 승인, 선택, credential 제공, 충돌 해결, 수동 복구 action을 각각 1회로 센다. eval 시작 전 공통 setup은 제외한다. |
-| token 지표 | `codex exec --json` 또는 SDK가 제공한 호출별 input, cached input, output, reasoning, total token을 합산한다. 제공되지 않으면 0이 아닌 `null`과 `unavailable_reason`을 기록한다. |
+| token 지표 | `codex exec --json` 또는 SDK가 제공한 호출별 input, cached input, output, reasoning, total token을 합산한다. 제공되지 않으면 0이 아닌 `null`과 `unavailableReason`을 기록한다. |
 
 성공률과 first-pass 검증률은 variant 전체와 시나리오별 값을 모두 제시한다. 재시도,
 wall time, 사람 개입, token은 성공 실행만 따로 요약하되 실패 실행 원자료도 보존한다.

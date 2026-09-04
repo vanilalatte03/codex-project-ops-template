@@ -55,6 +55,17 @@ dependency 설치, `python -m pytest scripts`, template doctor, configured check
 원래 명령의 실패는 test/doctor 실패로 세지 않는다. 실행 파일 탐색 실패로 따로
 분류하며, 대체 런타임 결과와 CI 결과를 기능 기준선의 증거로 사용한다.
 
+## 템플릿 저장소의 checks gate 제한
+
+이 저장소는 복사 대상 운영 템플릿이므로 `docs/COMMANDS.md`와
+`.codex/project-profile.json`의 프로젝트별 `test` 및 `build` 명령이 의도적으로
+비어 있다. 따라서 `python scripts/checks.py --stage manual`과
+`python scripts/checks.py --stage final`은 `Missing required check commands: test,
+build`로 종료한다. 이는 #13의 문서 변경이나 Harness 기준선 검증의 실패가 아니라
+템플릿 저장소 자체의 기존 제한이다. 이 PR의 검증은 위의 직접 unit test, template
+doctor, phase docs-check, `git diff --check`와 세 운영체제 CI로 수행하며, 실제
+프로젝트 인스턴스에서는 `test`와 `build`를 채운 뒤 checks gate를 사용한다.
+
 ## 아직 측정하지 않은 값
 
 대표 eval의 성공률, first-pass 검증률, 재시도 횟수, end-to-end wall time, 사람
