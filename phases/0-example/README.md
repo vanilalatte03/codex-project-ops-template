@@ -34,6 +34,13 @@
 - 현재 step이 미래 step 범위를 선행 구현하면 blocker로 본다.
 - 리뷰 실패는 같은 PR 브랜치에서 수정하고 `issues/0-example/issue-N.md`에 기록한다.
 
+## Worktree 실행
+
+autopilot은 각 step을 `codex/{phase}-step{N}-{name}` branch의 독립 Harness
+worktree에서 구현·검증·review한다. primary checkout은 전환하지 않으며, 실패한
+step worktree는 재개를 위해 보존한다. 상세 marker와 cleanup gate는
+[`docs/WORKTREE_LIFECYCLE.md`](../../docs/WORKTREE_LIFECYCLE.md)를 따른다.
+
 ## 완료 기준
 
 - 메모 추가/목록 명령이 동작하고 모든 step의 인수 기준이 통과한다.

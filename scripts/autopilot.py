@@ -17,6 +17,7 @@ from pathlib import Path
 
 import guard
 import task_schema
+import worktree
 from codex_common import (
     ALLOWED_CODEX_EFFORTS,
     CODEX_ENV_CONFIG,
@@ -43,6 +44,7 @@ NO_CHECKS_GRACE_SECONDS = 60
 NO_CHECKS_POLL_SECONDS = 15
 SCOPE_RULES_FILENAME = "scope-rules.json"
 LOCK_RELATIVE_PATH = Path(".codex") / "autopilot.lock"
+MAX_CONCURRENT_TASKS = 1
 REVIEW_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -183,6 +185,7 @@ class AutopilotRunner:
         allow_no_checks: bool = False,
         skip_base_checks: bool = False,
         root: Path = ROOT,
+        worktree_root: Path | None = None,
     ):
         self.phase = phase
         self.base = base
@@ -196,7 +199,18 @@ class AutopilotRunner:
         self.max_steps = max_steps
         self.allow_no_checks = allow_no_checks
         self.skip_base_checks = skip_base_checks
-        self.root = Path(root)
+        self.root = Path(root).resolve()
+        self.worktree_root = (
+            Path(worktree_root).resolve() if worktree_root is not None else None
+        )
+        self._lifecycle = worktree.WorktreeLifecycle(
+            self.root,
+            worktree_root=self.worktree_root,
+        )
+        self._base_ref: str | None = None
+        self._base_sha: str | None = None
+        self._active_handle: worktree.WorktreeHandle | None = None
+        self._active_worktree: Path | None = None
         self._scope_rules_cache: dict | None = None
         self._global_scope_rules_cache: dict | None = None
 
@@ -209,11 +223,12 @@ class AutopilotRunner:
         check: bool = True,
         timeout: int | None = None,
         input_text: str | None = None,
+        cwd: Path | None = None,
     ) -> subprocess.CompletedProcess:
         try:
             result = subprocess.run(
                 cmd,
-                cwd=self.root,
+                cwd=cwd or self.root,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -233,11 +248,12 @@ class AutopilotRunner:
         *,
         check: bool = True,
         timeout: int | None = None,
+        cwd: Path | None = None,
     ) -> subprocess.CompletedProcess:
         try:
             result = subprocess.run(
                 command,
-                cwd=self.root,
+                cwd=cwd or self.root,
                 shell=True,
                 capture_output=True,
                 text=True,
@@ -251,8 +267,34 @@ class AutopilotRunner:
             raise AutopilotError(self._shell_command_failure(command, result))
         return result
 
+    def _run_shell_in_context(
+        self,
+        command: str,
+        *,
+        check: bool = True,
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess:
+        if self._active_worktree is None:
+            return self._run_shell(command, check=check, timeout=timeout)
+        return self._run_shell(
+            command,
+            check=check,
+            timeout=timeout,
+            cwd=self._active_worktree,
+        )
+
     def _git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
         return self._run(["git", *args], check=check, timeout=DEFAULT_GIT_TIMEOUT)
+
+    def _git_at(
+        self,
+        cwd: Path | None,
+        *args: str,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess:
+        if cwd is None:
+            return self._git(*args, check=check)
+        return self._run(["git", *args], check=check, timeout=DEFAULT_GIT_TIMEOUT, cwd=cwd)
 
     def _gh(
         self, *args: str, check: bool = True, timeout: int = DEFAULT_GH_TIMEOUT
@@ -288,13 +330,134 @@ class AutopilotRunner:
                 return "\n".join(merged_prs) if merged_prs else f"No pending steps for {self.phase}."
 
             branch = self._step_branch(step)
-            self._run_step(branch, step)
-            pr_url = self._create_pr(branch, step)
-            self._review_and_fix_until_passed(pr_url, branch, step)
+            handle: worktree.WorktreeHandle | None = None
+            if self._uses_isolated_worktrees():
+                handle = self._task_worktree(step)
+                if handle.state.status in worktree.PRESERVED_STATUSES:
+                    self._active_handle = self._lifecycle.resume(handle.state.task_id)
+                else:
+                    self._active_handle = self._lifecycle.transition(handle, "running")
+                self._active_worktree = self._active_handle.path
+                handle = self._active_handle
 
-            self._mark_ready_and_merge(pr_url)
-            merged_prs.append(pr_url)
+            try:
+                # execute.py is invoked from the task worktree. In a test-only
+                # fake root without Git, the legacy two-argument call remains
+                # useful for exercising PR/review orchestration in isolation.
+                self._run_step(branch, step)
+                if handle is not None:
+                    handle = self._lifecycle.transition(
+                        handle,
+                        "implemented",
+                        head_sha=self._worktree_head(handle.path),
+                    )
+                    self._active_handle = handle
+
+                pr_url = self._create_pr(branch, step)
+                if handle is not None:
+                    handle = self._lifecycle.transition(handle, "reviewing")
+                    self._active_handle = handle
+                self._review_and_fix_until_passed(pr_url, branch, step)
+
+                if handle is not None:
+                    handle = self._lifecycle.transition(
+                        handle,
+                        "ready",
+                        head_sha=self._worktree_head(handle.path),
+                    )
+                    self._active_handle = handle
+                self._mark_ready_and_merge(pr_url)
+                merged_prs.append(pr_url)
+
+                if handle is not None:
+                    handle = self._lifecycle.transition(
+                        handle,
+                        "merged",
+                        head_sha=self._worktree_head(handle.path),
+                    )
+                    self._active_handle = handle
+                    cleanup = self._lifecycle.safe_cleanup(
+                        handle,
+                        expected_head_sha=handle.state.head_sha,
+                    )
+                    if cleanup.diagnostics:
+                        print(
+                            "WARNING: worktree는 정리했지만 local branch 정리에 진단이 남았습니다: "
+                            + " | ".join(cleanup.diagnostics),
+                            file=sys.stderr,
+                        )
+            except KeyboardInterrupt as exc:
+                if handle is not None:
+                    self._preserve_worktree_failure(handle, "interrupted", "사용자 중단")
+                raise
+            except (AutopilotError, worktree.WorktreeLifecycleError) as exc:
+                if handle is not None:
+                    status = "blocked" if getattr(exc, "blocked", False) else "error"
+                    self._preserve_worktree_failure(handle, status, str(exc))
+                if isinstance(exc, worktree.WorktreeLifecycleError):
+                    raise AutopilotError(str(exc)) from exc
+                raise
+            finally:
+                self._active_handle = None
+                self._active_worktree = None
+
             self._sync_base()
+
+    def _uses_isolated_worktrees(self) -> bool:
+        """실제 Git 실행에서만 isolation을 활성화한다.
+
+        Git 없는 단위 fixture는 precondition을 명시적으로 우회하므로 기존
+        orchestration 테스트를 유지할 수 있다. 실제 autopilot 경로는
+        ``_ensure_preconditions``가 Git 저장소를 먼저 검증한다.
+        """
+        return (self.root / ".git").exists()
+
+    def _task_worktree(self, step: dict) -> worktree.WorktreeHandle:
+        task_id = str(
+            step.get("id")
+            or f"{self.phase}:step{step['step']}:{step['name']}"
+        )
+        base_ref = self._base_ref or f"origin/{self.base}"
+        base_sha = self._base_sha
+        # A preserved task continues from the marker's immutable base pin even
+        # when the remote base advanced after a later operator action.
+        existing = next(
+            (record for record in self._lifecycle.list() if record.state.task_id == task_id),
+            None,
+        )
+        if existing is not None:
+            base_ref = existing.state.base_ref
+            base_sha = existing.state.base_sha
+        return self._lifecycle.create_or_resume(
+            task_id=task_id,
+            phase=self.phase,
+            branch=self._step_branch(step),
+            base_ref=base_ref,
+            base_sha=base_sha,
+        )
+
+    def _worktree_head(self, path: Path) -> str:
+        result = self._run(["git", "rev-parse", "HEAD"], cwd=path)
+        return result.stdout.strip()
+
+    def _preserve_worktree_failure(
+        self,
+        handle: worktree.WorktreeHandle,
+        status: str,
+        message: str,
+    ) -> None:
+        try:
+            self._lifecycle.transition(
+                handle,
+                status,
+                error=message,
+                diagnostics=[f"primary={self.root}", f"worktree={handle.path}"],
+            )
+        except worktree.WorktreeLifecycleError as transition_error:
+            print(
+                f"WARNING: worktree failure state 기록도 실패했습니다: {transition_error}",
+                file=sys.stderr,
+            )
 
     def _dry_run_summary(self) -> str:
         index = self._load_phase_index()
@@ -420,7 +583,32 @@ class AutopilotRunner:
     def _ensure_base_checks_pass(self):
         # base가 이미 깨져 있으면 첫 step PR의 리뷰 gate가 step 실패처럼 보이는
         # 오인을 만든다. 루프 시작 전에 base에서 같은 검증을 돌려 fail-fast 한다.
-        result = self._run_shell(FALLBACK_REVIEW_CHECK_COMMAND, check=False, timeout=CODEX_EXEC_TIMEOUT)
+        validation_path: Path | None = None
+        if self._base_ref and self._base_sha and self._uses_isolated_worktrees():
+            validation_path = self._lifecycle.create_validation_worktree(
+                base_ref=self._base_ref,
+                base_sha=self._base_sha,
+            )
+            try:
+                result = self._run_shell(
+                    FALLBACK_REVIEW_CHECK_COMMAND,
+                    check=False,
+                    timeout=CODEX_EXEC_TIMEOUT,
+                    cwd=validation_path,
+                )
+            finally:
+                try:
+                    self._lifecycle.remove_validation_worktree(validation_path)
+                except worktree.WorktreeLifecycleError as exc:
+                    raise AutopilotError(
+                        f"base validation worktree를 안전하게 정리하지 못했습니다. 보존된 path: {validation_path}; {exc}"
+                    ) from exc
+        else:
+            result = self._run_shell_in_context(
+                FALLBACK_REVIEW_CHECK_COMMAND,
+                check=False,
+                timeout=CODEX_EXEC_TIMEOUT,
+            )
         if result.returncode != 0:
             raise AutopilotError(
                 f"base 브랜치 `{self.base}`의 manual 검증이 이미 실패해서 자동 PR 루프를 시작하지 않습니다. "
@@ -430,32 +618,84 @@ class AutopilotRunner:
 
     def _sync_base(self):
         self._git("fetch", "origin", self.base)
-        self._git("checkout", self.base)
-        self._git("pull", "--ff-only", "origin", self.base)
+        ref = f"origin/{self.base}"
+        result = self._git(
+            "rev-parse",
+            "--verify",
+            f"refs/remotes/origin/{self.base}^{{commit}}",
+            check=False,
+        )
+        if result.returncode != 0:
+            if (self.root / ".git").exists():
+                raise AutopilotError(
+                    f"원격 base ref `{ref}`의 commit을 확인하지 못해 primary checkout을 건드리지 않고 중단합니다.\n"
+                    + self._command_failure(
+                        ["git", "rev-parse", "--verify", f"refs/remotes/origin/{self.base}^{{commit}}"],
+                        result,
+                    )
+                )
+            self._base_ref = None
+            self._base_sha = None
+            return
+        self._base_ref = ref
+        self._base_sha = result.stdout.strip() or None
 
-    def _phase_index_path(self) -> Path:
-        return self.root / "phases" / self.phase / "index.json"
+    def _phase_index_path(self, root: Path | None = None) -> Path:
+        return (root or self.root) / "phases" / self.phase / "index.json"
 
-    def _load_phase_index(self) -> task_schema.NormalizedPhaseIndex:
-        path = self._phase_index_path()
+    def _load_phase_index(self, root: Path | None = None) -> task_schema.NormalizedPhaseIndex:
+        path = self._phase_index_path(root)
         try:
-            return task_schema.load_phase_index(path, display_path=path.relative_to(self.root))
+            display_path = (
+                path.relative_to(root or self.root)
+                if (root or self.root) in path.parents or path == (root or self.root)
+                else path
+            )
+            return task_schema.load_phase_index(path, display_path=display_path)
         except task_schema.TaskSchemaError as exc:
             raise AutopilotError(str(exc)) from exc
 
     def _next_pending_step(self) -> dict | None:
-        index = self._load_phase_index()
+        index = self._load_base_phase_index()
         return next((s for s in index.get("steps", []) if s.get("status") == "pending"), None)
+
+    def _load_base_phase_index(self) -> task_schema.NormalizedPhaseIndex:
+        """primary checkout을 branch switch하지 않고 fetch한 base에서 읽는다."""
+        if self._base_ref and (self.root / ".git").exists():
+            relative = f"phases/{self.phase}/index.json"
+            result = self._git("show", f"{self._base_ref}:{relative}", check=False)
+            if result.returncode != 0:
+                raise AutopilotError(
+                    f"base ref `{self._base_ref}`에서 phase index를 읽지 못했습니다.\n"
+                    + self._command_failure(["git", "show", f"{self._base_ref}:{relative}"], result)
+                )
+            try:
+                payload = json.loads(result.stdout)
+                return task_schema.normalize_phase_index(payload, path=relative)
+            except (json.JSONDecodeError, task_schema.TaskSchemaError) as exc:
+                raise AutopilotError(f"base phase index 파싱 실패: {exc}") from exc
+        return self._load_phase_index()
 
     def _step_branch(self, step: dict) -> str:
         return f"codex/{self.phase}-step{step['step']}-{step['name']}"
 
     # --- step execution and PR ---
 
-    def _run_step(self, branch: str, step: dict):
+    def _run_step(
+        self,
+        branch: str,
+        step: dict,
+        worktree_path: Path | None = None,
+    ):
+        task_root = worktree_path or self._active_worktree
+        execute_script = (
+            str(task_root / "scripts" / "execute.py")
+            if task_root is not None
+            else "scripts/execute.py"
+        )
         cmd = [
             sys.executable,
-            "scripts/execute.py",
+            execute_script,
             self.phase,
             "--branch",
             branch,
@@ -469,7 +709,14 @@ class AutopilotRunner:
             cmd.append("--allow-xhigh")
         if self.unsafe:
             cmd.append("--unsafe")
-        self._run(cmd, timeout=CODEX_EXEC_TIMEOUT)
+        if task_root is None:
+            result = self._run(cmd, check=False, timeout=CODEX_EXEC_TIMEOUT)
+        else:
+            result = self._run(cmd, check=False, timeout=CODEX_EXEC_TIMEOUT, cwd=task_root)
+        if result.returncode != 0:
+            error = AutopilotError(self._command_failure(cmd, result))
+            error.blocked = result.returncode == 2
+            raise error
 
     def _create_pr(self, branch: str, step: dict) -> str:
         title = f"feat: {self.phase} {step['step']}단계 {step['name']} 구현"
@@ -490,9 +737,9 @@ class AutopilotRunner:
         return self._extract_url(result.stdout) or branch
 
     def _pr_body(self, branch: str, step: dict) -> str:
-        refreshed = self._step_from_index(step["step"]) or step
+        refreshed = self._step_from_index(step["step"], root=self._active_worktree) or step
         summary = refreshed.get("summary") or "step 실행 결과를 phase index에 기록했습니다."
-        task = self._step_task_summary(step)
+        task = self._step_task_summary(step, root=self._active_worktree)
         changed_files = self._changed_files()
         changed_section = "\n".join(f"- `{path}`" for path in changed_files[:12])
         if len(changed_files) > 12:
@@ -531,14 +778,14 @@ class AutopilotRunner:
     def _sentence_fragment(text: str) -> str:
         return text.strip().rstrip(".")
 
-    def _step_from_index(self, step_num: int) -> dict | None:
-        index = self._load_phase_index()
+    def _step_from_index(self, step_num: int, root: Path | None = None) -> dict | None:
+        index = self._load_phase_index(root=root)
         return next((s for s in index.get("steps", []) if s.get("step") == step_num), None)
 
-    def _step_task_summary(self, step: dict) -> str:
+    def _step_task_summary(self, step: dict, root: Path | None = None) -> str:
         if step.get("objective"):
             return str(step["objective"])
-        path = self.root / "phases" / self.phase / f"step{step['step']}.md"
+        path = (root or self._active_worktree or self.root) / "phases" / self.phase / f"step{step['step']}.md"
         if not path.exists():
             return step["name"]
         in_task = False
@@ -554,7 +801,13 @@ class AutopilotRunner:
         return step["name"]
 
     def _changed_files(self) -> list[str]:
-        result = self._git("diff", "--name-only", f"origin/{self.base}...HEAD", check=False)
+        result = self._git_at(
+            self._active_worktree,
+            "diff",
+            "--name-only",
+            f"{self._base_ref or f'origin/{self.base}'}...HEAD",
+            check=False,
+        )
         if result.returncode != 0:
             return []
         return [line for line in result.stdout.splitlines() if line.strip()]
@@ -564,7 +817,7 @@ class AutopilotRunner:
         if step_number is None:
             return (FALLBACK_REVIEW_CHECK_COMMAND,)
 
-        path = self.root / "phases" / self.phase / f"step{step_number}.md"
+        path = (self._active_worktree or self.root) / "phases" / self.phase / f"step{step_number}.md"
         return read_acceptance_commands(path) or (FALLBACK_REVIEW_CHECK_COMMAND,)
 
     def _review_check_commands(self, step: dict | None = None) -> tuple[str, ...]:
@@ -580,12 +833,41 @@ class AutopilotRunner:
     def _run_final_gate(self):
         commands = (
             f"{shell_quote(sys.executable)} scripts/checks.py --stage final",
-            f"git diff --check origin/{self.base}...HEAD",
+            f"git diff --check {self._base_ref or f'origin/{self.base}'}...HEAD",
         )
-        for command in commands:
-            result = self._run_shell(command, check=False, timeout=CODEX_EXEC_TIMEOUT)
-            if result.returncode != 0:
-                raise AutopilotError(self._shell_command_failure(command, result))
+        validation_path: Path | None = None
+        try:
+            if self._base_ref and self._base_sha and self._uses_isolated_worktrees():
+                validation_path = self._lifecycle.create_validation_worktree(
+                    base_ref=self._base_ref,
+                    base_sha=self._base_sha,
+                )
+                for command in commands:
+                    result = self._run_shell(
+                        command,
+                        check=False,
+                        timeout=CODEX_EXEC_TIMEOUT,
+                        cwd=validation_path,
+                    )
+                    if result.returncode != 0:
+                        raise AutopilotError(self._shell_command_failure(command, result))
+            else:
+                for command in commands:
+                    result = self._run_shell_in_context(
+                        command,
+                        check=False,
+                        timeout=CODEX_EXEC_TIMEOUT,
+                    )
+                    if result.returncode != 0:
+                        raise AutopilotError(self._shell_command_failure(command, result))
+        finally:
+            if validation_path is not None:
+                try:
+                    self._lifecycle.remove_validation_worktree(validation_path)
+                except worktree.WorktreeLifecycleError as exc:
+                    raise AutopilotError(
+                        f"final validation worktree를 안전하게 정리하지 못했습니다. 보존된 path: {validation_path}; {exc}"
+                    ) from exc
 
     def _mark_ready_and_merge(self, pr_url: str):
         self._gh("pr", "ready", pr_url)
@@ -649,7 +931,7 @@ class AutopilotRunner:
                 checks_passed = False
                 findings.append(f"인수 기준 명령이 위험 명령 정책에 차단되었습니다: {danger}")
                 continue
-            result = self._run_shell(command, check=False, timeout=CODEX_EXEC_TIMEOUT)
+            result = self._run_shell_in_context(command, check=False, timeout=CODEX_EXEC_TIMEOUT)
             if result.returncode != 0:
                 if self._is_diff_check_command(command):
                     diff_passed = False
@@ -695,8 +977,9 @@ class AutopilotRunner:
     # --- scope rules ---
 
     def _scan_scope_diff(self, step: dict | None = None) -> list[str]:
-        diff_cmd = ["git", "diff", "--unified=0", f"origin/{self.base}...HEAD"]
-        result = self._git(*diff_cmd[1:], check=False)
+        base_ref = self._base_ref or f"origin/{self.base}"
+        diff_cmd = ["git", "diff", "--unified=0", f"{base_ref}...HEAD"]
+        result = self._git_at(self._active_worktree, *diff_cmd[1:], check=False)
         if result.returncode != 0:
             # diff 실패를 빈 finding으로 돌리면 scope gate가 검사 없이 통과한다.
             # 실패 자체를 finding으로 보고해 gate를 막는다.
@@ -722,7 +1005,7 @@ class AutopilotRunner:
                 line = raw[1:]
                 active_line = line_no
                 line_no += 1
-                if self._line_in_safe_section(current_file, active_line):
+                if self._line_in_safe_section(current_file, active_line, root=self._active_worktree):
                     continue
                 for message in self._forbidden_messages(line):
                     if self._is_allowed_scope_message(message, line, step):
@@ -775,7 +1058,10 @@ class AutopilotRunner:
         """phases/<phase>/scope-rules.json — phase별 금지/허용 규칙."""
         if self._scope_rules_cache is None:
             self._scope_rules_cache = self._load_scope_rules_file(
-                self.root / "phases" / self.phase / SCOPE_RULES_FILENAME
+                (self._active_worktree or self.root)
+                / "phases"
+                / self.phase
+                / SCOPE_RULES_FILENAME
             )
         return self._scope_rules_cache
 
@@ -783,7 +1069,7 @@ class AutopilotRunner:
         """.codex/scope-rules.json — 모든 phase에 적용되는 금지 규칙."""
         if self._global_scope_rules_cache is None:
             self._global_scope_rules_cache = self._load_scope_rules_file(
-                self.root / ".codex" / SCOPE_RULES_FILENAME
+                (self._active_worktree or self.root) / ".codex" / SCOPE_RULES_FILENAME
             )
         return self._global_scope_rules_cache
 
@@ -850,8 +1136,14 @@ class AutopilotRunner:
             or self.STEP_OUTPUT_RE.match(normalized) is not None
         )
 
-    def _line_in_safe_section(self, path: str, line_no: int) -> bool:
-        target = self.root / path
+    def _line_in_safe_section(
+        self,
+        path: str,
+        line_no: int,
+        *,
+        root: Path | None = None,
+    ) -> bool:
+        target = (root or self._active_worktree or self.root) / path
         if not target.exists() or line_no <= 0:
             return False
         try:
@@ -885,7 +1177,21 @@ class AutopilotRunner:
                 str(last_message_path),
                 "-",
             ]
-            result = self._run(cmd, check=False, timeout=CODEX_EXEC_TIMEOUT, input_text=prompt)
+            if self._active_worktree is None:
+                result = self._run(
+                    cmd,
+                    check=False,
+                    timeout=CODEX_EXEC_TIMEOUT,
+                    input_text=prompt,
+                )
+            else:
+                result = self._run(
+                    cmd,
+                    check=False,
+                    timeout=CODEX_EXEC_TIMEOUT,
+                    input_text=prompt,
+                    cwd=self._active_worktree,
+                )
             last_message = (
                 last_message_path.read_text(encoding="utf-8")
                 if last_message_path.exists()
@@ -942,7 +1248,13 @@ class AutopilotRunner:
             return Path(file.name)
 
     def _worktree_status(self) -> str:
-        result = self._git("status", "--short", "--untracked-files=all", check=False)
+        result = self._git_at(
+            self._active_worktree,
+            "status",
+            "--short",
+            "--untracked-files=all",
+            check=False,
+        )
         if result.returncode != 0:
             return f"<git status failed: {self._compact_output(result.stderr.strip())}>"
         return result.stdout.strip()
@@ -1087,7 +1399,7 @@ class AutopilotRunner:
         number = self._next_issue_number()
         title = f"{self.phase} step {step['step']} 자동 리뷰 실패 {number}"
         body = self._issue_body(pr_url, review, step)
-        issue_dir = self.root / "issues" / self.phase
+        issue_dir = (self._active_worktree or self.root) / "issues" / self.phase
         issue_dir.mkdir(parents=True, exist_ok=True)
         local_path = issue_dir / f"issue-{number}.md"
         local_path.write_text(f"# Issue {number}: {title}\n\n{body}", encoding="utf-8")
@@ -1120,19 +1432,20 @@ class AutopilotRunner:
         self._commit_issue_record(issue.local_path, step, message_suffix="자동 리뷰 해결 기록")
 
     def _commit_issue_record(self, local_path: Path, step: dict, *, message_suffix: str = "자동 리뷰 실패 기록"):
+        git_root = self._active_worktree or self.root
         try:
-            rel_path = local_path.relative_to(self.root)
+            rel_path = local_path.relative_to(git_root)
         except ValueError:
             rel_path = local_path
 
-        if self._git("add", "--", str(rel_path), check=False).returncode != 0:
+        if self._git_at(git_root, "add", "--", str(rel_path), check=False).returncode != 0:
             return
-        if self._git("diff", "--cached", "--quiet", check=False).returncode == 0:
+        if self._git_at(git_root, "diff", "--cached", "--quiet", check=False).returncode == 0:
             return
 
         message = f"chore: {self.phase} {step['step']}단계 {message_suffix}"
-        if self._git("commit", "-m", message, check=False).returncode == 0:
-            self._git("push", check=False)
+        if self._git_at(git_root, "commit", "-m", message, check=False).returncode == 0:
+            self._git_at(git_root, "push", check=False)
 
     def _invoke_codex_fix(
         self,
@@ -1163,23 +1476,32 @@ class AutopilotRunner:
         cmd = codex_base_cmd(self.fix_effort)
         # 프롬프트는 argv 대신 stdin으로 전달해서 ARG_MAX 한계를 피한다.
         cmd.append("-")
-        self._run(cmd, timeout=CODEX_EXEC_TIMEOUT, input_text=prompt)
+        if self._active_worktree is None:
+            self._run(cmd, timeout=CODEX_EXEC_TIMEOUT, input_text=prompt)
+        else:
+            self._run(
+                cmd,
+                timeout=CODEX_EXEC_TIMEOUT,
+                input_text=prompt,
+                cwd=self._active_worktree,
+            )
 
     def _commit_dirty_fix(self, step: dict):
-        status = self._git("status", "--short", "--untracked-files=all").stdout.strip()
+        git_root = self._active_worktree or self.root
+        status = self._git_at(git_root, "status", "--short", "--untracked-files=all").stdout.strip()
         if not status:
             return
-        self._git("add", "-A")
-        if self._git("diff", "--cached", "--quiet", check=False).returncode == 0:
+        self._git_at(git_root, "add", "-A")
+        if self._git_at(git_root, "diff", "--cached", "--quiet", check=False).returncode == 0:
             return
         msg = f"fix: {self.phase} {step['step']}단계 리뷰 이슈 수정"
-        self._git("commit", "-m", msg)
+        self._git_at(git_root, "commit", "-m", msg)
 
     def _push_branch(self, branch: str):
-        self._git("push", "-u", "origin", branch)
+        self._git_at(self._active_worktree, "push", "-u", "origin", branch)
 
     def _next_issue_number(self) -> int:
-        issue_dir = self.root / "issues" / self.phase
+        issue_dir = (self._active_worktree or self.root) / "issues" / self.phase
         if not issue_dir.is_dir():
             return 1
         numbers: list[int] = []
@@ -1242,6 +1564,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip the base-branch manual check verification before starting the PR loop",
     )
     parser.add_argument(
+        "--worktree-root",
+        type=Path,
+        help="Managed root for Harness task worktrees (default: sibling .codex-worktrees/<repo>)",
+    )
+    parser.add_argument(
         "--step-effort",
         choices=ALLOWED_CODEX_EFFORTS,
         default=DEFAULT_STEP_EFFORT,
@@ -1289,6 +1616,7 @@ def main(argv: list[str] | None = None) -> int:
             max_steps=args.max_steps,
             allow_no_checks=args.allow_no_checks,
             skip_base_checks=args.skip_base_checks,
+            worktree_root=args.worktree_root,
         ).run()
     except AutopilotError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

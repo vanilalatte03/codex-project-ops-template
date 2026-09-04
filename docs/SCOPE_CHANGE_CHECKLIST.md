@@ -43,6 +43,7 @@
 | `docs/ADR.md`, `docs/adr/{NNNN}-*.md` | 새 결정 ADR 추가, 인덱스 연결, 이전 ADR과의 관계 |
 | `docs/COMMANDS.md` | 활성 명령, 새 검증 명령, 폐기된 명령 제거 |
 | `docs/TASK_SCHEMA.md` | phase index v1/v2 필드, status, validation과 migration 경계 |
+| `docs/WORKTREE_LIFECYCLE.md` | task worktree 상태, 소유권, marker, 정리와 resume 경계 |
 | `AGENTS.md` | 목표/기술 스택 문구, CRITICAL 규칙, 디렉터리 규칙이 새 범위와 충돌하지 않는지 |
 
 API 명세, DB 스키마, 화면 설계, 공유/배포 가이드 같은 프로젝트 전용 문서를
@@ -82,6 +83,7 @@ API 명세, DB 스키마, 화면 설계, 공유/배포 가이드 같은 프로�
 | `scripts/task_schema.py` | phase index schema, 정규화 또는 pre-Codex validation이 바뀔 때 |
 | `scripts/execute.py` | branch/commit/final 검증 같은 phase 실행 workflow가 바뀔 때 |
 | `scripts/autopilot.py` | PR 생성, 자체 리뷰, issue 기록, merge loop workflow가 바뀔 때 |
+| `scripts/worktree.py` | task worktree 생성·조회·재개·소유권·안전 정리 workflow가 바뀔 때 |
 | `scripts/tests/test_*.py` | 위 스크립트 동작을 바꾼 경우 |
 
 범위별 문서 검증 규칙은 `phases/{phase}/docs-checks.json`, 범위 금지 키워드는

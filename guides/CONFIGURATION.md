@@ -141,3 +141,21 @@ phase별 `phases/<phase>/scope-rules.json`은 `extraForbidden`으로 금지 규�
 
 - ADR은 `docs/adr/0001-title.md` 형식으로 기록합니다.
 - `docs/ADR.md`는 ADR 인덱스와 운영 규칙만 유지합니다.
+
+## Task worktree
+
+격리 실행을 사용하는 autopilot은 primary checkout의 branch와 파일을 보존하고,
+기본적으로 primary 부모의 `.codex-worktrees/<repository-name>/`에 task worktree를
+만듭니다. 경로를 별도로 관리해야 하는 환경에서는 다음처럼 절대 경로를 지정합니다.
+
+```bash
+python scripts/autopilot.py <phase-name> --base develop --worktree-root <absolute-path>
+```
+
+task marker는 Git administrative directory에만 저장되며 `owner`가
+`codex-harness`인 경우에만 Harness 상태로 인정합니다. `scripts/worktree.py list`
+와 `resume`은 읽기 및 소유권 검증 중심이고, 사용자 path/branch와 stale entry를
+자동 prune하지 않습니다. merge 후 성공·clean·HEAD·active-entry gate가 통과한
+Harness 소유 worktree만 `cleanup` 대상입니다. 상세 상태 전이는
+[`docs/WORKTREE_LIFECYCLE.md`](../docs/WORKTREE_LIFECYCLE.md)와 ADR-0004를
+참조합니다.

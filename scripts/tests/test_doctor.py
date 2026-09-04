@@ -60,6 +60,10 @@ def _write_template_files(root: Path):
         "# 아키텍처\n\n## 시스템 개요\n- Runtime/Framework: <Spring Boot | Python | Node | 기타>\n",
         encoding="utf-8",
     )
+    (root / "docs" / "WORKTREE_LIFECYCLE.md").write_text(
+        "primary checkout harness-worktree.json owner codex-harness safe_cleanup\n",
+        encoding="utf-8",
+    )
     (root / "docs" / "COMMANDS.md").write_text("# Commands\n", encoding="utf-8")
     (root / ".codex" / "project-profile.json").write_text(
         json.dumps(
@@ -249,6 +253,7 @@ def test_required_files_cover_readme_core_operations_contract():
         "scripts/codex_common.py",
         "scripts/doctor.py",
         "scripts/guard.py",
+        "scripts/worktree.py",
     }
 
     assert expected.issubset(set(doctor.REQUIRED_FILES))
@@ -349,6 +354,16 @@ def test_template_mode_detects_bare_python_hook_command(tmp_path):
 
     assert any("through python3" in issue for issue in issues)
     assert any("bare `python` command" in issue for issue in issues)
+
+
+def test_template_mode_detects_incomplete_worktree_contract(tmp_path):
+    _write_template_files(tmp_path)
+    (tmp_path / "docs" / "WORKTREE_LIFECYCLE.md").write_text("primary checkout\n", encoding="utf-8")
+
+    issues = doctor.collect_issues(tmp_path, "template")
+
+    assert any("harness-worktree.json" in issue for issue in issues)
+    assert any("safe_cleanup" in issue for issue in issues)
 
 
 def test_template_mode_detects_missing_line_ending_policy(tmp_path):
