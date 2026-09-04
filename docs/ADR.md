@@ -7,3 +7,4 @@
 
 ## ADR 목록
 - [ADR-0001: Harness Step PR Workflow](adr/0001-step-pr-workflow.md)
+- [ADR-0002: Codex subprocess 환경 상속 최소화](adr/0002-minimize-codex-environment.md)

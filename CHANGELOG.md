@@ -6,6 +6,14 @@
 형식, doctor 검사 등)를 먼저 확인합니다. 절차는
 [guides/UPGRADE.md](guides/UPGRADE.md)를 따릅니다.
 
+## 2026.09.04
+
+### Changed
+- Codex 실행 명령의 환경 상속을 `core`로 줄이고, 공식 기본 secret-name 제외
+  정책을 활성화했습니다. 프로젝트별 non-secret runtime 환경 변수는
+  `.codex/config.toml`의 `shell_environment_policy.filters`에서 명시적으로
+  확장합니다.
+
 ## 2026.06.17
 
 ### Added

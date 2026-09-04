@@ -3,3 +3,15 @@
 # same stable feature as `hooks`.
 codex_hooks = true
 hooks = true
+
+# Codex command shells receive the platform's conservative core environment.
+# The explicit CLI settings in scripts/codex_common.py keep this policy in
+# force for execute.py and autopilot.py even when a project overrides config.
+[shell_environment_policy]
+inherit = "core"
+ignore_default_excludes = false
+
+# Add only non-secret project runtime names when a project truly needs them.
+# An `include` entry becomes an allowlist, so keep the required core names such
+# as PATH in the table when adding any project-specific entry.
+[shell_environment_policy.filters]

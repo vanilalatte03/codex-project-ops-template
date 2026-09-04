@@ -340,6 +340,7 @@ def test_codex_review_uses_step_scoped_exec_prompt(runner):
     assert "review" not in seen["cmd"][2:]
     assert "--base" not in seen["cmd"]
     assert ap.CODEX_ENV_CONFIG in seen["cmd"]
+    assert ap.CODEX_ENV_SECRET_FILTER_CONFIG in seen["cmd"]
     assert "--output-schema" in seen["cmd"]
     assert seen["schema"]["required"] == ["pass", "summary", "findings"]
     assert "--output-last-message" in seen["cmd"]
@@ -423,6 +424,7 @@ def test_codex_review_uses_high_reasoning_effort_by_default(runner):
     assert "-c" in seen["cmd"]
     assert 'model_reasoning_effort="high"' in seen["cmd"]
     assert ap.CODEX_ENV_CONFIG in seen["cmd"]
+    assert ap.CODEX_ENV_SECRET_FILTER_CONFIG in seen["cmd"]
 
 
 def test_codex_fix_uses_medium_reasoning_effort(runner, tmp_repo):
@@ -447,6 +449,7 @@ def test_codex_fix_uses_medium_reasoning_effort(runner, tmp_repo):
     assert seen["cmd"][:2] == [ap.CODEX_BIN, "exec"]
     assert 'model_reasoning_effort="medium"' in seen["cmd"]
     assert ap.CODEX_ENV_CONFIG in seen["cmd"]
+    assert ap.CODEX_ENV_SECRET_FILTER_CONFIG in seen["cmd"]
     assert seen["input_text"].startswith("당신은 Harness step PR 자동 리뷰 수정 담당자입니다.")
     assert seen["timeout"] == 1800
 
