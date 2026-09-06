@@ -37,7 +37,13 @@
       "completed_at": "2026-09-04T21:51:08+0900",
       "summary": "task별 owner marker와 pinned base SHA worktree lifecycle을 도입하고 primary 불변·직렬 autopilot·실패 보존·safe cleanup 및 Windows/stale 격리 검증을 추가했다."
     },
-    { "step": 5, "name": "sdk-spike", "status": "pending" },
+    {
+      "step": 5,
+      "name": "sdk-spike",
+      "status": "blocked",
+      "blocked_at": "2026-09-06T19:20:37+0900",
+      "blocked_reason": "외부 Codex read-only review가 비공개 저장소 egress 승인 정책으로 최초 1회와 축소 재시도 1회 모두 차단되어 review gate를 완료하지 못했다. 구현 및 로컬 검증은 통과했다."
+    },
     { "step": 6, "name": "runner-adapter", "status": "pending" },
     { "step": 7, "name": "resumable-telemetry", "status": "pending" },
     { "step": 8, "name": "risk-based-review", "status": "pending" },

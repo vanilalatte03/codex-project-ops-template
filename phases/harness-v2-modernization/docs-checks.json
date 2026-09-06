@@ -59,6 +59,16 @@
       "name": "safe cleanup ownership gate",
       "paths": ["docs/WORKTREE_LIFECYCLE.md"],
       "pattern": "status가 `merged`이고 owner/task/path/branch가 일치"
+    },
+    {
+      "name": "Python SDK conditional decision",
+      "paths": ["docs/adr/0005-python-codex-sdk-spike.md"],
+      "pattern": "결정 식별자: SDK-CONDITIONAL-GO-0\\.147\\.0-EXEC-FALLBACK"
+    },
+    {
+      "name": "Python SDK exec fallback contract",
+      "paths": ["phases/harness-v2-modernization/COMPATIBILITY.md"],
+      "pattern": "SDK-CONDITIONAL-GO-0\\.147\\.0-EXEC-FALLBACK"
     }
   ],
   "finalRequired": [],

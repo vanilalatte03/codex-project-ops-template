@@ -50,6 +50,26 @@
 - 실패를 성공으로 바꾸는 무조건 retry는 허용하지 않는다. retry 상한 뒤에는
   `error` 또는 `blocked`로 멈춘다.
 
+## Python SDK spike 결정 (#18)
+
+SDK-CONDITIONAL-GO-0.147.0-EXEC-FALLBACK
+
+- `openai-codex==0.147.0`과 matching `openai-codex-cli-bin==0.147.0`의 Windows
+  live spike는 auth, model list, thread start/run/continue/resume, read-only sandbox,
+  `deny_all`, typed 오류 복구와 caller timeout 뒤 interrupt를 통과했다.
+- 이 결과는 Step 6의 opt-in adapter 설계를 허용하는 조건부 GO다. production
+  기본값은 계속 `codex exec`이며 SDK가 없거나 version/runtime/auth/model/sandbox/
+  approval/timeout/interrupt/output 검증에 실패하면 같은 gate를 유지한 채 exec로
+  fallback한다.
+- stable high-level SDK에는 native turn timeout과 native review method가 없다.
+  timeout은 caller deadline과 interrupt/terminal wait/client close로 감싸고,
+  native review는 Step 8까지 기존 read-only review 경로를 유지한다.
+- private/generated App Server review API를 필수 의존성으로 사용하지 않는다.
+  Ubuntu/macOS, headless CI와 장시간 안정성 검증 전에는 SDK feature flag를 기본으로
+  켜지 않는다.
+- 상세 환경, 실패 분류와 비민감 결과는 `SDK_SPIKE.md`와
+  `SDK_SPIKE_RESULTS.json`을 따른다.
+
 ## rollback trigger
 
 다음 중 하나면 v2 경로의 배포·기본 전환을 중단하고 마지막 검증된 v1 경로로
