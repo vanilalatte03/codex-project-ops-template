@@ -123,6 +123,42 @@ def test_preconditions_reject_invalid_v2_before_github_or_codex(runner, tmp_repo
         runner._ensure_preconditions()
 
 
+def test_sync_base_fetches_remote_ref_without_switching_primary_branch(runner):
+    calls = []
+
+    def fake_git(*args, check=True):
+        calls.append(args)
+        if args[:2] == ("rev-parse", "--verify"):
+            return cp(stdout="a" * 40 + "\n")
+        return cp()
+
+    runner._git = fake_git
+
+    runner._sync_base()
+
+    assert ("fetch", "origin", "main") in calls
+    assert not any(args and args[0] in {"checkout", "switch", "pull"} for args in calls)
+    assert runner._base_sha == "a" * 40
+    assert runner._base_ref == "origin/main"
+
+
+def test_run_step_uses_task_worktree_as_cwd(runner, tmp_repo):
+    seen = {}
+    worktree_path = tmp_repo / "isolated"
+    worktree_path.mkdir()
+
+    def fake_run(cmd, check=True, timeout=None, input_text=None, cwd=None):
+        seen.update(cmd=cmd, cwd=cwd, timeout=timeout)
+        return cp()
+
+    runner._run = fake_run
+    runner._run_step("codex/task", {"step": 0, "name": "project-scaffold"}, worktree_path)
+
+    assert seen["cwd"] == worktree_path
+    assert seen["cmd"][0] == sys.executable
+    assert seen["cmd"][1] == str(worktree_path / "scripts" / "execute.py")
+
+
 def test_step_success_creates_draft_pr_comments_and_merges(runner, tmp_repo):
     gh_calls = []
     executed = []

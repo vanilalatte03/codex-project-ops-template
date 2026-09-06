@@ -30,7 +30,13 @@
       "completed_at": "2026-09-04T19:47:12+0900",
       "summary": "outcome task v2 schema와 shared validation을 추가하고 v1 steps 실행·저장 형식과 serial list-order를 보존했다."
     },
-    { "step": 4, "name": "isolated-worktree", "status": "pending" },
+    {
+      "step": 4,
+      "name": "isolated-worktree",
+      "status": "completed",
+      "completed_at": "2026-09-04T21:51:08+0900",
+      "summary": "task별 owner marker와 pinned base SHA worktree lifecycle을 도입하고 primary 불변·직렬 autopilot·실패 보존·safe cleanup 및 Windows/stale 격리 검증을 추가했다."
+    },
     { "step": 5, "name": "sdk-spike", "status": "pending" },
     { "step": 6, "name": "runner-adapter", "status": "pending" },
     { "step": 7, "name": "resumable-telemetry", "status": "pending" },

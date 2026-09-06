@@ -74,6 +74,28 @@ autopilot 운영 안전장치:
 - `execute.py`의 guardrail prompt에는 문서 본문을 첨부하지 않고, Codex가 직접 읽어야 할 저장소 상대 경로만 기록한다. `guardrailDocs`가 비어 있지 않으면 그 목록을 우선하고, 비어 있거나 없으면 phase 문서 참조와 canonical 문서 fallback을 사용한다. 현재 step의 `읽어야 할 파일`도 경로 목록에 포함한다.
 - AGENTS, phase 문서, profile 또는 step이 지정한 경로가 누락되거나 읽을 수 없으면 Codex를 호출하기 전에 명확한 오류로 중단한다. `guardrailDocs`는 문서 내용이 아니라 경로 선택 입력이다.
 
+## Task worktree 운영
+
+`autopilot.py`는 primary checkout에서 branch를 전환하거나 phase 파일을
+commit하지 않는다. base는 `fetch`로만 동기화하고, 각 task의 구현·검증·review·PR
+준비는 `.codex-worktrees/<repository-name>/` 아래의 Harness 소유 worktree에서
+수행한다. 경로를 고정해야 하면 `--worktree-root`를 사용한다.
+
+```powershell
+python scripts/autopilot.py <phase-name> --base develop --worktree-root <absolute-path>
+python scripts/worktree.py list
+python scripts/worktree.py resume <task-id>
+python scripts/worktree.py cleanup <task-id> --expected-head-sha <sha>
+```
+
+`scripts/worktree.py`는 Git administrative directory의 marker를 읽어 task,
+branch, 절대 path, base ref/SHA, owner와 상태를 확인한다. marker가 없는 기존
+path/branch, owner가 다른 marker, stale administrative entry와 dirty/ignored
+worktree는 자동 정리하지 않고 진단과 함께 보존한다. 성공적으로 merge된
+Harness 소유 worktree만 clean/head/active-entry gate 뒤에 force 없이 정리한다.
+상태 전이와 v1/v2 migration 경계는 [`docs/WORKTREE_LIFECYCLE.md`](WORKTREE_LIFECYCLE.md)를
+기준으로 한다.
+
 `scope-rules.json` rule schema:
 
 ```json

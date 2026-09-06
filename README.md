@@ -10,8 +10,8 @@ Codex 기반 개인 프로젝트 운영 템플릿입니다. 이 레포는 앱 �
 ```text
 ① 셋업    템플릿 복사 → Git hook 설정 → Plan Mode로 문서 채우기 → doctor 통과
 ② 설계    Harness skill로 MVP를 phase/step 문서로 분해
-③ 실행    execute.py로 step 구현, 또는 autopilot.py로 step별 PR 루프
-④ 검증    guard hook + checks + 자체 리뷰가 매 step의 범위와 품질을 지킴
+③ 실행    autopilot.py가 task worktree에서 구현·검증·review·PR을 직렬 수행
+④ 검증    guard hook + checks + 자체 리뷰가 매 task의 범위와 품질을 지킴
 ```
 
 각 단계에서 Codex에 복붙할 프롬프트는 [guides/PROMPTS.md](guides/PROMPTS.md)에
@@ -103,13 +103,19 @@ doctor가 통과한 뒤 Plan Mode에서 Harness skill로 phase/step 설계안을
 
 ## ③ 실행
 
-### execute.py — 로컬 step 실행
+### execute.py — 선택된 worktree에서 로컬 step 실행
 
 ```bash
 python scripts/execute.py {phase-name}                  # phase 전체
 python scripts/execute.py {phase-name} --next-step-only # 다음 step만
 python scripts/execute.py {phase-name} --push           # 실행 후 push
 ```
+
+`execute.py`는 이미 선택된 task worktree에서 실행하는 worker다. primary checkout의
+branch를 바꾸지 않으려면 `autopilot.py`를 사용하거나, `scripts/worktree.py`로
+Harness 소유 worktree를 먼저 만들고 그 경로에서 실행한다. worktree marker와
+resume/cleanup 규칙은 [docs/WORKTREE_LIFECYCLE.md](docs/WORKTREE_LIFECYCLE.md)에
+있다.
 
 ### autopilot.py — step별 PR 루프
 
@@ -121,7 +127,7 @@ Codex 호출 전에 공통 validator로 확인하며, v2의 `dependsOn`은 현�
 - `git status --short`가 비어 있는 clean worktree 상태임
 - `git remote get-url origin`이 성공함
 - `gh auth status`가 성공함
-- base branch가 `origin`과 fast-forward 동기화 가능한 상태임
+- base branch를 `fetch`한 뒤 remote ref와 전체 commit SHA를 확인할 수 있음
 - base 브랜치에서 `python scripts/checks.py --stage manual`이 통과함
   (의도적으로 생략하려면 `--skip-base-checks`)
 
@@ -129,13 +135,18 @@ Codex 호출 전에 공통 validator로 확인하며, v2의 `dependsOn`은 현�
 python scripts/autopilot.py {phase-name} --max-review-fixes 2  # phase 전체 구현 시 권장
 ```
 
-autopilot은 step마다 아래 루프를 반복합니다.
+autopilot은 task마다 아래 루프를 반복합니다.
 
-1. 다음 pending step을 `codex/{phase}-step{N}-{name}` 브랜치에서 실행하고 Draft PR을 만듭니다.
-2. step 인수 기준 명령 또는 `python scripts/checks.py --stage manual`, `git diff --check`, scope rule scan, Codex read-only review가 통과하면 PR을 ready로 전환합니다.
-3. PR ready 후 `gh pr checks --watch` 원격 체크가 통과해야 squash merge합니다. CI가 없는 저장소는 `--allow-no-checks`로 no-checks grace 대기를 생략할 수 있습니다.
-4. 리뷰가 실패하면 PR 코멘트, GitHub Issue, `issues/{phase}/issue-N.md`를 남기고 같은 PR 브랜치에서 자동 수정과 재리뷰를 진행합니다.
-5. 재시도 후에도 실패하면 PR과 Issue를 열어둔 채 중단합니다.
+1. base를 fetch하고 SHA를 고정한 뒤, 다음 pending task의
+   `codex/{phase}-step{N}-{name}` branch와 독립 worktree를 준비합니다.
+2. task worktree에서 구현·인수 기준·scope rule scan·Codex read-only review를
+   수행하고 Draft PR을 만듭니다.
+3. step 인수 기준 명령 또는 `python scripts/checks.py --stage manual`,
+   `git diff --check`가 통과하면 PR을 ready로 전환합니다.
+4. PR ready 후 `gh pr checks --watch` 원격 체크가 통과해야 squash merge하고,
+   merge된 Harness 소유 worktree만 안전 정리합니다.
+5. review/실행이 실패하면 marker·checkout·PR·Issue를 남겨 같은 task를 재개하고,
+   사용자 worktree/branch와 stale administrative entry는 자동 변경하지 않습니다.
 
 ## ④ 검증 장치
 
@@ -160,7 +171,7 @@ autopilot은 step마다 아래 루프를 반복합니다.
 | Codex 설정 | `.codex/` | hook 설정, project profile, scope rules |
 | Hook | `.githooks/pre-commit`, `.codex/hooks/` | 커밋 전 검증, cross-platform hook wrapper |
 | Skill | `.agents/skills/harness`, `.agents/skills/review` | phase/step 설계·실행, 문서 기준 자체 리뷰 워크플로우 |
-| 스크립트 | `scripts/`, `scripts/tests/` | `execute.py`, `autopilot.py`, `checks.py`, `doctor.py`, `task_schema.py`, `guard.py`, `upgrade.py`, `codex_common.py`, Harness 스크립트 테스트 |
+| 스크립트 | `scripts/`, `scripts/tests/` | `execute.py`, `autopilot.py`, `worktree.py`, `checks.py`, `doctor.py`, `task_schema.py`, `guard.py`, `upgrade.py`, `codex_common.py`, Harness 스크립트 테스트 |
 | 작업 공간 | `phases/`, `issues/`, `archive/` | v1/v2 phase 문서(예시: `phases/0-example/`, `phases/0-example-v2/`), 실패 기록, 직전 MVP 요약 |
 | CI | `.github/workflows/template-ci.yml` | macOS/Linux/Windows 템플릿 검증 (인스턴스에는 복사하지 않음) |
 | 메타 | `LICENSE`, `CHANGELOG.md` | MIT 라이선스, `templateVersion` 기준 변경 내역 |
@@ -187,7 +198,9 @@ python scripts/upgrade.py --from <template-checkout>            # 적용 + templ
 ```
 
 버전 사이의 계약 변화는 [CHANGELOG.md](CHANGELOG.md)에서, 파일 소유 구분과 전체
-절차는 [guides/UPGRADE.md](guides/UPGRADE.md)에서 확인합니다.
+절차는 [guides/UPGRADE.md](guides/UPGRADE.md)에서 확인합니다. task worktree의
+상태·소유권·정리 gate는 [docs/WORKTREE_LIFECYCLE.md](docs/WORKTREE_LIFECYCLE.md)를
+따릅니다.
 
 ## 템플릿 자체 개발
 

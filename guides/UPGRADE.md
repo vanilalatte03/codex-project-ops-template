@@ -19,7 +19,7 @@
 
 | 단위 | 소유 | 업그레이드 시 |
 | --- | --- | --- |
-| `scripts/` (테스트 포함) | 템플릿 | 통째로 덮어쓰기 |
+| `scripts/` (테스트 포함, `worktree.py` 포함) | 템플릿 | 통째로 덮어쓰기 |
 | `.agents/skills/harness/`, `.agents/skills/review/` | 템플릿 공통 스킬 | 각 디렉터리만 통째로 덮어쓰기 |
 | `.githooks/`, `.codex/hooks/`, `.codex/hooks.json`, `.codex/config.toml`, `.gitattributes` | 템플릿 | 통째로 덮어쓰기 |
 | `guides/PROMPTS.md`, `guides/CONFIGURATION.md`, `guides/UPGRADE.md` | 템플릿 | 통째로 덮어쓰기 |
@@ -93,6 +93,27 @@ Harness 업그레이드는 phase index를 자동으로 v1에서 v2로 변환하�
 읽기 중 생성되는 v2의 `step`/`name` alias는 메모리 값이며 JSON에 저장되지
 않습니다. `dependsOn`은 현재 직렬 실행 순서를 바꾸지 않고, DAG scheduler·cycle
 처리·parallelism은 후속 기능으로 남겨 둡니다.
+
+## task worktree migration
+
+`scripts/worktree.py`와 `docs/WORKTREE_LIFECYCLE.md`는 새 Harness의 실행 계약이다.
+업그레이드 시 기존 phase/index, 사용자 branch와 worktree를 자동으로 Harness
+소유로 바꾸지 않는다. marker가 없는 기존 path/branch는 먼저 사람이 소유권을
+확인하고, 필요한 경우 새 managed root에서 task를 시작한다.
+
+1. 현재 작업의 `git worktree list --porcelain`, branch, dirty/ignored 파일을
+   보존하고 `python scripts/worktree.py list`로 marker/stale 상태를 확인한다.
+2. 템플릿 소유 `scripts/`를 dry-run으로 교체한 뒤 `doctor.py --instance`, 전체
+   unit test와 `git diff --check`를 실행한다.
+3. 실패·blocked·중단 marker는 삭제하지 말고 같은 `taskId`로 resume한다. base가
+   바뀌었거나 marker/administrative entry가 불일치하면 수동 reconcile을 먼저
+   완료한다.
+4. merge되지 않은 worktree는 cleanup하지 않는다. merge된 Harness 소유 task도
+   `docs/WORKTREE_LIFECYCLE.md`의 clean/head/owner gate를 다시 통과한 뒤에만
+   force 없는 정리를 수행한다.
+
+`git reset --hard`, force push, 사용자 branch 삭제, 사용자 worktree 이동과 무차별
+`git worktree prune`은 migration 절차에 포함되지 않는다.
 
 ## 템플릿 repo에서 버전 올리기
 

@@ -295,7 +295,7 @@ python scripts/autopilot.py {작업명} --dry-run --max-steps 1
 ```
 
 `scripts/execute.py`는 phase index를 `scripts/task_schema.py`로 먼저 검증한 뒤
-브랜치 생성, `AGENTS.md`·phase·관련 문서의 직접 읽기 경로 검증, 현재 step의
+현재 선택된 task branch를 확인하고, `AGENTS.md`·phase·관련 문서의 직접 읽기 경로 검증, 현재 step의
 objective/acceptance criteria/hard constraints와 완료된 단계의
 `summary` context 전달, 재시도 피드백, 코드 변경과 메타데이터의 2단계 커밋,
 completed 보고 후 인수 기준 재검증, 타임스탬프 기록, 선택적 push를 처리한다.
@@ -305,9 +305,25 @@ completed 보고 후 인수 기준 재검증, 타임스탬프 기록, 선택적 
 실행은 Codex 승인과 sandbox를 유지하며, 필요한 경우에만 `--unsafe`를 명시한다.
 `scripts/execute.py`는 `--step` 또는 `--next-step-only`가 아닌 전체 phase 실행에서 모든 pending step이 완료되면 `python scripts/checks.py --stage final`을 실행한다.
 
-`scripts/autopilot.py`는 clean worktree에서 다음 pending step을 `codex/{phase}-step{N}-{name}` 브랜치로 실행하고 Draft PR을 만든다. `--base`를 생략하면 origin HEAD를 사용하고 실패 시 `main`으로 fallback한다. step 인수 기준, diff check, scope rule scan, Codex read-only review, 원격 PR checks가 통과하면 ready 전환 후 squash merge한다. 실패하면 PR 코멘트, GitHub Issue, `issues/{phase}/issue-N.md`를 남기고 같은 PR 브랜치에서 제한 횟수만큼 자동 수정과 재리뷰를 수행한다. 재시도 후에도 실패하면 PR과 Issue를 열어둔 채 중단한다.
+`scripts/autopilot.py`는 clean primary checkout에서 base remote ref/SHA를 확인하고, 다음 pending step을 `codex/{phase}-step{N}-{name}` 브랜치의 Harness-owned task worktree에서 실행해 Draft PR을 만든다. `--base`를 생략하면 origin HEAD를 사용하고 실패 시 `main`으로 fallback한다. step 인수 기준, diff check, scope rule scan, Codex read-only review, 원격 PR checks가 통과하면 ready 전환 후 squash merge한다. 실패하면 marker·task worktree·PR 코멘트·GitHub Issue·`issues/{phase}/issue-N.md`를 남기고 같은 PR 브랜치에서 제한 횟수만큼 자동 수정과 재리뷰를 수행한다. 재시도 후에도 실패하면 PR과 Issue를 열어둔 채 중단한다.
 `scripts/autopilot.py`도 모든 pending step이 사라진 뒤 `python scripts/checks.py --stage final`로 phase-local `docs-checks.json`을 한 번 검증한다.
 
 phase별 범위 규칙이 필요하면 `phases/{작업명}/scope-rules.json`에 `extraForbidden` 또는 `allowedScopeMessages`를 추가한다. 전역 규칙은 `.codex/scope-rules.json`에 둔다. 템플릿 스크립트에 제품별 금지 키워드를 추가하지 않는다.
 
 복구가 필요하면 `phases/{작업명}/index.json`에서 실패 또는 blocked 상태의 단계를 다시 `pending`으로 바꾸고, `error_message` 또는 `blocked_reason`을 제거한 뒤 원인을 해결하고 페이즈를 다시 실행한다. v1/v2 index의 validation 오류는 path/reason과 함께 Codex 호출 전에 중단되며, 기존 phase 파일은 자동 migration하지 않는다.
+
+### Task worktree 실행 경계
+
+`autopilot.py`가 구현·검증·review·PR 준비를 task별 독립 worktree에서 수행할 때는
+`docs/WORKTREE_LIFECYCLE.md`와 ADR-0004를 먼저 읽는다. `scripts/worktree.py`가
+Git administrative directory의 `harness-worktree.json` marker에
+`owner=codex-harness`, `taskId`, phase, branch, 절대 path, `baseRef`, `baseSha`와
+상태·진단을 atomic하게 기록한다. marker 없는 path/branch, owner 불일치, stale
+administrative entry는 소유권을 추측하지 않고 보존한다.
+
+primary checkout은 branch switch/commit/stage 대상이 아니다. base sync와 PR merge는
+`.codex/autopilot.lock` 아래 동시성 1로 직렬화하고, v1 `steps[]`·v2 `tasks[]`는
+기존 list-order를 그대로 따른다. `error`, `blocked`, `interrupted` task는 marker와
+checkout을 남겨 같은 task를 resume하며, `merged`·clean·expected HEAD·active entry·
+Harness owner를 모두 확인한 경우에만 force 없는 safe cleanup을 수행한다. DAG,
+ready-set, parallelism과 사용자 worktree/branch 자동 삭제·prune은 이 단계에 넣지 않는다.

@@ -628,31 +628,27 @@ class TestCheckoutBranch:
         ])
         executor._checkout_branch()  # should return without checkout
 
-    def test_branch_exists_checkout(self, executor):
+    def test_branch_switch_is_refused(self, executor):
         self._mock_git(executor, [
             MagicMock(returncode=0, stdout="main\n", stderr=""),
-            MagicMock(returncode=0, stdout="", stderr=""),
-            MagicMock(returncode=0, stdout="", stderr=""),
         ])
-        executor._checkout_branch()
 
-    def test_branch_not_exists_create(self, executor):
-        self._mock_git(executor, [
-            MagicMock(returncode=0, stdout="main\n", stderr=""),
-            MagicMock(returncode=1, stdout="", stderr="not found"),
-            MagicMock(returncode=0, stdout="", stderr=""),
-        ])
-        executor._checkout_branch()
-
-    def test_checkout_fails_exits(self, executor):
-        self._mock_git(executor, [
-            MagicMock(returncode=0, stdout="main\n", stderr=""),
-            MagicMock(returncode=1, stdout="", stderr=""),
-            MagicMock(returncode=1, stdout="", stderr="dirty tree"),
-        ])
         with pytest.raises(SystemExit) as exc_info:
             executor._checkout_branch()
         assert exc_info.value.code == 1
+
+    def test_wrong_branch_is_not_created_or_checked_out(self, executor):
+        calls = []
+
+        def fake_git(*args):
+            calls.append(args)
+            return MagicMock(returncode=0, stdout="main\n", stderr="")
+
+        executor._run_git = fake_git
+        with pytest.raises(SystemExit):
+            executor._checkout_branch()
+
+        assert all(args[0] not in {"checkout", "switch"} for args in calls)
 
     def test_no_git_exits(self, executor):
         self._mock_git(executor, [

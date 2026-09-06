@@ -9,12 +9,16 @@
 - `index.json`의 `tasks[]`에 결과 목표, 의존성, Issue와 위험도 메타데이터를
   기록한다.
 - 현재 Harness는 배열 순서를 그대로 따라 한 번에 하나의 task를 실행한다.
+- autopilot은 각 task를 독립 Harness worktree에서 배열 순서대로 실행하고,
+  primary checkout은 전환하지 않는다.
 
 ## 제외 범위
 
 - `dependsOn`을 이용한 DAG 스케줄링, ready set 계산, 병렬 실행은 이 예시에
   포함하지 않는다.
 - 기존 phase 파일을 v2로 자동 변환하지 않는다.
+- marker가 없는 사용자 worktree/branch와 stale administrative entry를 자동
+  삭제하거나 prune하지 않는다.
 
 ## Steps
 
@@ -27,6 +31,7 @@
 
 - 두 task가 선언된 배열 순서대로 실행된다.
 - v2 필수 필드와 dependency reference가 schema validator를 통과한다.
+- 실패 task의 worktree marker가 재개 정보를 보존한다.
 
 ## 검증 명령
 

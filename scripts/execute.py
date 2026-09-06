@@ -215,17 +215,12 @@ class StepExecutor:
 
         if r.stdout.strip() == branch:
             return
-
-        r = self._run_git("rev-parse", "--verify", f"refs/heads/{branch}")
-        r = self._run_git("checkout", branch) if r.returncode == 0 else self._run_git("checkout", "-b", branch)
-
-        if r.returncode != 0:
-            print(f"  ERROR: 브랜치 '{branch}' checkout 실패.")
-            print(f"  {r.stderr.strip()}")
-            print("  Hint: 변경사항을 stash하거나 commit한 후 다시 시도하세요.")
-            sys.exit(1)
-
-        print(f"  Branch: {branch}")
+        print(
+            "  ERROR: execute.py는 현재 checkout의 branch를 바꾸지 않습니다.\n"
+            f"  요청 branch: {branch}\n"
+            "  Harness autopilot이 만든 task worktree에서 다시 실행하세요."
+        )
+        sys.exit(1)
 
     def _commit_step(self, step_num: int, step_name: str):
         output_rel = f"phases/{self._phase_dir_name}/step{step_num}-output.json"

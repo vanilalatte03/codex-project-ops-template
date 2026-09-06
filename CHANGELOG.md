@@ -16,6 +16,21 @@
   오류 테스트를 추가했습니다. v1→v2 자동 migration과 DAG/parallel 실행은
   포함하지 않습니다.
 
+## 2026.09.04.2
+
+### Added
+- `scripts/worktree.py`와 `docs/WORKTREE_LIFECYCLE.md`를 추가해 task별 Git
+  worktree의 create/list/resume/safe cleanup, owner marker, base ref/SHA와 실패
+  보존 계약을 정의했습니다.
+- primary checkout을 건드리지 않는 직렬 autopilot 경로와 Windows/stale/실패
+  복구·task isolation 검증을 추가합니다.
+
+### Changed
+- worktree 소유권이 확인된 merge 성공 task만 force 없는 정리 대상이 되며,
+  사용자 branch/worktree와 stale administrative entry는 자동 변경하지 않습니다.
+- `execute.py`는 task worktree worker로, `autopilot.py`는 base sync·merge를
+  repository lock 아래 직렬 조정 경로로 사용합니다.
+
 ## 2026.09.04
 
 ### Changed

@@ -49,6 +49,16 @@
       "name": "task migration opt-in boundary",
       "paths": ["docs/TASK_SCHEMA.md"],
       "pattern": "자동 migration은 하지 않는다"
+    },
+    {
+      "name": "isolated worktree marker contract",
+      "paths": ["docs/WORKTREE_LIFECYCLE.md"],
+      "pattern": "owner.*codex-harness"
+    },
+    {
+      "name": "safe cleanup ownership gate",
+      "paths": ["docs/WORKTREE_LIFECYCLE.md"],
+      "pattern": "status가 `merged`이고 owner/task/path/branch가 일치"
     }
   ],
   "finalRequired": [],
