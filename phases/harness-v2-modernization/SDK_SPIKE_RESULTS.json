@@ -1,0 +1,78 @@
+{
+  "capabilities": {
+    "appServerTransport": true,
+    "approvalModes": [
+      "auto_review",
+      "deny_all"
+    ],
+    "experimentalApiDefault": true,
+    "modelList": true,
+    "nativeReviewHighLevel": false,
+    "nativeTurnTimeoutParameter": false,
+    "sandboxPresets": [
+      "full-access",
+      "read-only",
+      "workspace-write"
+    ],
+    "threadPersistenceRead": true,
+    "threadResume": true,
+    "threadRun": true,
+    "threadStart": true,
+    "turnInterrupt": true
+  },
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13"
+  },
+  "live": {
+    "errorRecovery": {
+      "intentionalFailure": {
+        "category": "invalid-request",
+        "errorClass": "InvalidRequestError",
+        "status": "failed"
+      },
+      "sameClientRecovered": true,
+      "status": "passed"
+    },
+    "sandboxAndApproval": {
+      "approvalMode": "deny_all",
+      "humanInterventionCount": 0,
+      "readOnlyWriteBlocked": true,
+      "status": "passed",
+      "turnReachedTerminalState": true
+    },
+    "status": "completed",
+    "threadLifecycle": {
+      "authenticated": true,
+      "continue": true,
+      "model": "gpt-5.6-terra",
+      "modelAdvertised": true,
+      "modelCount": 5,
+      "resumeAfterClientRestart": true,
+      "start": true,
+      "status": "passed",
+      "wallTimeSeconds": {
+        "continue": 3.891,
+        "resume": 5.453,
+        "start": 6.047
+      }
+    },
+    "timeoutAndInterrupt": {
+      "callerTimeoutTriggered": true,
+      "interruptSent": true,
+      "sdkNativeTimeoutParameter": false,
+      "status": "passed",
+      "terminalStatus": "interrupted"
+    }
+  },
+  "package": {
+    "runtime": "openai-codex-cli-bin==0.147.0",
+    "sdk": "openai-codex==0.147.0"
+  },
+  "privacy": {
+    "credentialMaterialStored": false,
+    "privateThreadIdentifierStored": false,
+    "responseContentStored": false
+  },
+  "schemaVersion": 1
+}
