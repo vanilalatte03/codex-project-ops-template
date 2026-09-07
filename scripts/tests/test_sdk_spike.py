@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 from enum import Enum
 from pathlib import Path
 from types import SimpleNamespace
@@ -6,6 +8,87 @@ from types import SimpleNamespace
 import pytest
 
 import sdk_spike
+
+
+def test_runtime_version_mismatch_fails_before_sdk_import(monkeypatch):
+    monkeypatch.setattr(sdk_spike, "_version", lambda name:
+                        "0.148.0" if name == sdk_spike.RUNTIME_DISTRIBUTION else "0.147.0")
+    with pytest.raises(sdk_spike.SpikeError, match="openai-codex-cli-bin"):
+        sdk_spike.build_static_report()
+
+
+@pytest.mark.parametrize("failed", [None, "auth", "model", "start", "continue", "resume", "identity"])
+def test_lifecycle_requires_every_check(monkeypatch, failed):
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def account(self):
+            return SimpleNamespace(account=None if failed == "auth" else object())
+
+        def models(self):
+            return SimpleNamespace(data=[] if failed == "model" else [SimpleNamespace(model="test")])
+
+        def thread_start(self, **kwargs):
+            return SimpleNamespace(id="fixture")
+
+        def thread_resume(self, *args, **kwargs):
+            return SimpleNamespace(id="different" if failed == "identity" else "fixture")
+
+        def thread_archive(self, *args):
+            pass
+
+    outcomes = iter([(failed != key, 0.0) for key in ("start", "continue", "resume")])
+    monkeypatch.setattr(sdk_spike, "_run_text_turn", lambda *args: next(outcomes))
+    sdk = SimpleNamespace(Codex=Client, Sandbox=SimpleNamespace(read_only="read-only"),
+                          ApprovalMode=SimpleNamespace(deny_all="deny_all"))
+    result = sdk_spike._probe_thread_lifecycle(sdk, ".", "test")
+    assert result["status"] == ("passed" if failed is None else "failed")
+
+
+@pytest.mark.parametrize("failure", ["interrupt", "terminal", "close", None])
+def test_timeout_cleanup_is_bounded_and_fail_closed(monkeypatch, failure):
+    released = threading.Event()
+    closed = threading.Event()
+    monkeypatch.setattr(sdk_spike, "TERMINAL_WAIT_SECONDS", 0.03)
+    monkeypatch.setattr(sdk_spike, "CLEANUP_WAIT_SECONDS", 0.03)
+
+    class Handle:
+        def run(self):
+            released.wait(2)
+            return SimpleNamespace(status="interrupted")
+
+        def interrupt(self):
+            if failure == "interrupt":
+                raise RuntimeError("private message")
+            if failure not in ("terminal", "close"):
+                released.set()
+
+    class Client:
+        def thread_start(self, **kwargs):
+            return SimpleNamespace(turn=lambda *args: Handle())
+
+        def close(self):
+            closed.set()
+            if failure == "close":
+                released.wait(2)
+            else:
+                released.set()
+
+    sdk = SimpleNamespace(Codex=Client, Sandbox=SimpleNamespace(read_only="read-only"),
+                          ApprovalMode=SimpleNamespace(auto_review="auto_review"))
+    started = time.monotonic()
+    try:
+        result = sdk_spike._probe_timeout_and_interrupt(sdk, ".", "test", 0.01)
+        assert time.monotonic() - started < 1
+        assert closed.is_set()
+        assert result["status"] == ("passed" if failure is None else "failed")
+        sdk_spike.assert_safe_report(result)
+    finally:
+        released.set()
 
 
 def test_require_pinned_version_rejects_drift():
