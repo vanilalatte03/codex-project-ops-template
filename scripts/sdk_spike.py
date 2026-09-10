@@ -12,6 +12,7 @@ import platform
 import re
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from types import ModuleType
@@ -22,6 +23,8 @@ SDK_DISTRIBUTION = "openai-codex"
 RUNTIME_DISTRIBUTION = "openai-codex-cli-bin"
 PINNED_SDK_VERSION = "0.147.0"
 DEFAULT_MODEL = "gpt-5.6-terra"
+TERMINAL_WAIT_SECONDS = 30.0
+CLEANUP_WAIT_SECONDS = 5.0
 
 _SENSITIVE_KEY_RE = re.compile(
     r"(?:credential|token|password|api[_-]?key|thread[_-]?id|response[_-]?(?:text|body)|prompt)",
@@ -43,10 +46,10 @@ def _version(distribution: str) -> str:
     return importlib.metadata.version(distribution)
 
 
-def require_pinned_version(actual: str) -> None:
+def require_pinned_version(actual: str, distribution: str = SDK_DISTRIBUTION) -> None:
     if actual != PINNED_SDK_VERSION:
         raise SpikeError(
-            f"expected {SDK_DISTRIBUTION}=={PINNED_SDK_VERSION}, got {actual}"
+            f"expected {distribution}=={PINNED_SDK_VERSION}, got {actual}"
         )
 
 
@@ -99,6 +102,7 @@ def build_static_report() -> tuple[dict[str, Any], ModuleType]:
     sdk_version = _version(SDK_DISTRIBUTION)
     require_pinned_version(sdk_version)
     runtime_version = _version(RUNTIME_DISTRIBUTION)
+    require_pinned_version(runtime_version, RUNTIME_DISTRIBUTION)
     import openai_codex as sdk
 
     report = {
@@ -168,8 +172,10 @@ def _probe_thread_lifecycle(sdk: ModuleType, cwd: str, model: str) -> dict[str, 
             same_identifier = resumed.id == thread_identifier
             resumed_codex.thread_archive(thread_identifier)
 
+        passed = all((getattr(account, "account", None) is not None,
+                      model in model_ids, started, continued, resumed_ok, same_identifier))
         return {
-            "status": "passed",
+            "status": "passed" if passed else "failed",
             "authenticated": getattr(account, "account", None) is not None,
             "model": model,
             "modelAdvertised": model in model_ids,
@@ -246,6 +252,20 @@ def _probe_error_recovery(sdk: ModuleType, cwd: str, model: str) -> dict[str, An
         return classify_exception(exc)
 
 
+def _daemon_call(action: Callable[[], Any]) -> concurrent.futures.Future:
+    """A stuck SDK call must not register an unbounded interpreter-exit join."""
+    future = concurrent.futures.Future()
+
+    def run() -> None:
+        try:
+            future.set_result(action())
+        except BaseException as exc:
+            future.set_exception(exc)
+
+    threading.Thread(target=run, daemon=True).start()
+    return future
+
+
 def _probe_timeout_and_interrupt(
     sdk: ModuleType,
     cwd: str,
@@ -253,7 +273,6 @@ def _probe_timeout_and_interrupt(
     timeout_seconds: float,
 ) -> dict[str, Any]:
     command = "Start-Sleep -Seconds 30" if sys.platform == "win32" else "sleep 30"
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     codex = None
     timed_out = False
     interrupted = False
@@ -270,17 +289,17 @@ def _probe_timeout_and_interrupt(
         handle = thread.turn(
             f"Run this exact shell command before replying: {command}. Then reply DONE."
         )
-        future = executor.submit(handle.run)
+        future = _daemon_call(handle.run)
         try:
             future.result(timeout=timeout_seconds)
         except concurrent.futures.TimeoutError:
             timed_out = True
-            handle.interrupt()
+            _daemon_call(handle.interrupt).result(timeout=CLEANUP_WAIT_SECONDS)
             interrupted = True
-        result = future.result(timeout=30)
+        result = future.result(timeout=TERMINAL_WAIT_SECONDS)
         terminal = str(getattr(result, "status", "unknown"))
         passed = timed_out and interrupted and terminal.lower().endswith("interrupted")
-        return {
+        report = {
             "status": "passed" if passed else "failed",
             "sdkNativeTimeoutParameter": False,
             "callerTimeoutTriggered": timed_out,
@@ -288,11 +307,14 @@ def _probe_timeout_and_interrupt(
             "terminalStatus": terminal.split(".")[-1].lower(),
         }
     except Exception as exc:
-        return classify_exception(exc)
+        report = classify_exception(exc)
     finally:
-        executor.shutdown(wait=True)
         if codex is not None:
-            codex.close()
+            try:
+                _daemon_call(codex.close).result(timeout=CLEANUP_WAIT_SECONDS)
+            except Exception as exc:
+                report = classify_exception(exc)
+    return report
 
 
 def run_live_probes(

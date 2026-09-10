@@ -72,6 +72,17 @@ codex exec --json --skip-git-repo-check -s read-only -C <empty-temp-dir> `
 
 ## capability 결과
 
+### 후속 review 보강 (2026-09-07)
+
+SDK와 runtime 버전을 모두 고정 검증하며 lifecycle의 인증·model·start·continue·
+resume 검사가 모두 참일 때만 `passed`를 기록한다. timeout probe는 interrupt와
+client close를 각각 최대 5초, terminal wait를 최대 30초 기다린다. 오류 경로에서도
+client close를 시도하며 daemon worker로 무기한 executor 종료 대기를 피한다.
+SDK close 자체가 멈추면 실패로 보고하고 반환하지만 남은 SDK 자식 프로세스의 정리까지
+보장하지 않는다. 이는 spike의 실패 진단 보강이며 production timeout 보장이 아니다.
+기존 JSON은 2026-09-06 live 관찰값이며, 이 수정 이후 live 재측정 결과로 바꾸지 않았다.
+수정은 fake SDK 회귀 테스트로 검증하며 조건부 GO와 opt-in/exec fallback 전제는 유지한다.
+
 | capability | 기대 결과 | 실제 결과 | 판정 |
 | --- | --- | --- | --- |
 | stable package / runtime pin | 같은 버전의 SDK와 runtime 설치 | 둘 다 `0.147.0` | 가능 |

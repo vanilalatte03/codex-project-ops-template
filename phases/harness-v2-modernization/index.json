@@ -40,9 +40,8 @@
     {
       "step": 5,
       "name": "sdk-spike",
-      "status": "blocked",
-      "blocked_at": "2026-09-06T19:20:37+0900",
-      "blocked_reason": "외부 Codex read-only review가 비공개 저장소 egress 승인 정책으로 최초 1회와 축소 재시도 1회 모두 차단되어 review gate를 완료하지 못했다. 구현 및 로컬 검증은 통과했다."
+      "status": "completed",
+      "summary": "SDK spike의 조건부 GO와 exec fallback을 유지하고 외부 리뷰 3건을 수정했으며 재리뷰 CLEAR와 245개 테스트로 Step 5 gate를 해소했다."
     },
     { "step": 6, "name": "runner-adapter", "status": "pending" },
     { "step": 7, "name": "resumable-telemetry", "status": "pending" },
