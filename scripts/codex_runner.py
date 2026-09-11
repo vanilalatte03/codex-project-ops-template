@@ -41,7 +41,7 @@ class RunnerRequest:
     mode: str = "run"
     effort: str = "medium"
     sandbox: str | None = None
-    timeout: int = CODEX_EXEC_TIMEOUT
+    timeout: int | None = CODEX_EXEC_TIMEOUT
     unsafe: bool = False
     output_schema: str | None = None
     output_last_message: str | None = None
@@ -196,26 +196,16 @@ class SdkRunner:
         self._threads: dict[str, object] = {}
 
     def _run_thread(self, thread: object, request: RunnerRequest) -> RunnerResult:
-        outcome: dict[str, object] = {}
-        failure: list[BaseException] = []
-
-        def invoke() -> None:
-            try:
-                outcome["result"] = thread.run(request.prompt)
-            except BaseException as exc:  # SDK typed errors vary across pinned runtime surfaces.
-                failure.append(exc)
-
-        worker = threading.Thread(target=invoke, daemon=True)
-        worker.start()
-        worker.join(request.timeout)
-        if worker.is_alive():
-            # ADR-0005 requires bounded, fail-closed cleanup; never report a timed-out turn as success.
-            self._bounded_call(getattr(thread, "interrupt", None))
-            self._bounded_call(getattr(self._codex, "close", None))
-            return RunnerResult(False, self.name, 124, error_kind="timeout")
-        if failure:
-            raise RunnerExecutionError("SDK run failed", recoverable=True) from failure[0]
-        result = outcome.get("result")
+        # The pinned SDK has no cancellable caller-deadline primitive.  Running it
+        # in a daemon thread would let an uninterruptible turn keep modifying the
+        # worktree after Harness reports a timeout, so route deadline-bound work to
+        # the recoverable exec fallback instead.
+        if request.timeout is not None:
+            raise RunnerCapabilityError("SDK bounded timeout is unavailable; use exec fallback")
+        try:
+            result = thread.run(request.prompt)
+        except BaseException as exc:  # SDK typed errors vary across pinned runtime surfaces.
+            raise RunnerExecutionError("SDK run failed", recoverable=True) from exc
         thread_id = getattr(thread, "id", None) or getattr(thread, "thread_id", None)
         return RunnerResult.success(self.name, final_message=str(getattr(result, "final_response", "")), thread_id=thread_id)
 

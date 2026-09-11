@@ -202,23 +202,16 @@ def test_executor_and_autopilot_do_not_assemble_codex_argv_directly():
         assert "resolve_codex_bin" not in source
 
 
-def test_sdk_timeout_is_fail_closed_after_bounded_cleanup():
+def test_sdk_deadline_is_rejected_before_an_unbounded_turn_starts():
     class Thread:
         id = "ephemeral-thread"
 
         def run(self, prompt):
-            __import__("time").sleep(0.05)
-
-        def interrupt(self):
-            return None
+            raise AssertionError("deadline-bound SDK turn must not start")
 
     runner = codex_runner.SdkRunner.__new__(codex_runner.SdkRunner)
-    runner._codex = type("Client", (), {"close": lambda self: None})()
-    result = runner._run_thread(Thread(), codex_runner.RunnerRequest(prompt="slow", timeout=0))
-
-    assert result.ok is False
-    assert result.exit_code == 124
-    assert result.error_kind == "timeout"
+    with pytest.raises(codex_runner.RunnerCapabilityError, match="bounded timeout"):
+        runner._run_thread(Thread(), codex_runner.RunnerRequest(prompt="slow", timeout=0))
 
 
 def test_sdk_explicit_interrupt_is_bounded_and_fail_closed():
