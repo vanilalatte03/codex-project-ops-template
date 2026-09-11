@@ -46,8 +46,8 @@
     {
       "step": 6,
       "name": "runner-adapter",
-      "status": "completed",
-      "summary": "공통 runner adapter에 exec 기본·SDK opt-in·정규화 결과와 recoverable fallback을 도입하고 executor/autopilot의 Codex 호출 세부사항을 분리했다."
+      "status": "blocked",
+      "blocked_reason": "외부 read-only review의 SDK caller-deadline 안전성 P1은 수정했지만, 허용된 재리뷰 2회를 모두 사용하여 CLEAR 재검증이 필요하다."
     },
     { "step": 7, "name": "resumable-telemetry", "status": "pending" },
     { "step": 8, "name": "risk-based-review", "status": "pending" },
