@@ -263,7 +263,8 @@ class SdkRunner:
             interrupt = getattr(thread, "interrupt", None)
             if not callable(interrupt):
                 return RunnerResult(False, self.name, error_kind="interrupt_unsupported")
-            interrupt()
+            if not self._bounded_call(interrupt):
+                return RunnerResult(False, self.name, error_kind="interrupt_timeout")
             return RunnerResult.success(self.name)
         except Exception:
             return RunnerResult(False, self.name, error_kind="interrupt_failed")

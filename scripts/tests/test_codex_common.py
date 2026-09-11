@@ -219,3 +219,14 @@ def test_sdk_timeout_is_fail_closed_after_bounded_cleanup():
     assert result.ok is False
     assert result.exit_code == 124
     assert result.error_kind == "timeout"
+
+
+def test_sdk_explicit_interrupt_is_bounded_and_fail_closed():
+    runner = codex_runner.SdkRunner.__new__(codex_runner.SdkRunner)
+    runner._threads = {"thread": type("Thread", (), {"interrupt": lambda self: None})()}
+    runner._bounded_call = lambda callback: False
+
+    result = runner.interrupt(codex_runner.RunnerSession("sdk", "thread"))
+
+    assert result.ok is False
+    assert result.error_kind == "interrupt_timeout"
