@@ -750,6 +750,21 @@ class TestStepOnly:
 # ---------------------------------------------------------------------------
 
 class TestInvokeCodex:
+    def test_executor_delegates_codex_invocation_to_runner_adapter(self, executor, monkeypatch):
+        seen = {}
+
+        class FakeRunner:
+            def start(self, request):
+                seen["request"] = request
+                return __import__("codex_runner").RunnerResult.success("exec")
+
+        monkeypatch.setattr(ex, "build_runner", lambda **kwargs: FakeRunner())
+        output = executor._invoke_codex({"step": 2, "name": "ui"}, "PREAMBLE")
+
+        assert seen["request"].prompt == "PREAMBLE"
+        assert output["adapter"] == "exec"
+        assert "stdout" not in output
+
     def test_invokes_codex_with_correct_args(self, executor):
         mock_result = MagicMock(returncode=0, stdout='{"result": "ok"}', stderr="")
         step = {"step": 2, "name": "ui"}
@@ -759,7 +774,6 @@ class TestInvokeCodex:
             output = executor._invoke_codex(step, preamble)
 
         cmd = mock_run.call_args[0][0]
-        assert cmd[0] == ex.CODEX_BIN
         assert cmd[1] == "exec"
         assert "--json" in cmd
         assert ex.CODEX_ENV_CONFIG in cmd
@@ -779,7 +793,7 @@ class TestInvokeCodex:
             executor._invoke_codex(step, "preamble")
 
         cmd = mock_run.call_args[0][0]
-        assert cmd[:2] == [ex.CODEX_BIN, "exec"]
+        assert cmd[1] == "exec"
         assert 'model_reasoning_effort="high"' in cmd
         assert ex.CODEX_ENV_CONFIG in cmd
         assert ex.CODEX_ENV_SECRET_FILTER_CONFIG in cmd
@@ -879,9 +893,10 @@ class TestInvokeCodex:
             output = executor._invoke_codex(step, "preamble")
 
         assert output["exitCode"] == 124
-        assert "1800초" in output["stderr"]
+        assert output["errorKind"] == "timeout"
         saved = json.loads((executor._phase_dir / "step2-output.json").read_text(encoding="utf-8"))
         assert saved["exitCode"] == 124
+        assert "stderr" not in saved
 
 
 # ---------------------------------------------------------------------------

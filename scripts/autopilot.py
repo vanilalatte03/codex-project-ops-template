@@ -23,15 +23,13 @@ from codex_common import (
     CODEX_ENV_CONFIG,
     CODEX_ENV_SECRET_FILTER_CONFIG,
     CODEX_EXEC_TIMEOUT,
-    codex_base_cmd,
     configure_utf8_stdio,
     read_acceptance_commands,
-    resolve_codex_bin,
     validate_codex_effort,
 )
+from codex_runner import RunnerError, RunnerRequest, RunnerSession, build_runner
 
 ROOT = Path(__file__).resolve().parent.parent
-CODEX_BIN = resolve_codex_bin()
 DEFAULT_STEP_EFFORT = "medium"
 DEFAULT_REVIEW_EFFORT = "high"
 DEFAULT_FIX_EFFORT = "medium"
@@ -213,6 +211,8 @@ class AutopilotRunner:
         self._active_worktree: Path | None = None
         self._scope_rules_cache: dict | None = None
         self._global_scope_rules_cache: dict | None = None
+        self._runner_sessions: dict[int, RunnerSession] = {}
+        self._fix_sessions: dict[int, RunnerSession] = {}
 
     # --- command helpers ---
 
@@ -1163,40 +1163,44 @@ class AutopilotRunner:
 
     # --- Codex read-only review ---
 
+    def _runner_process(self, cmd, *, input, capture_output, text, timeout):
+        """Adapt the runner's subprocess boundary to the active task worktree."""
+        # _run is retained for the active-worktree boundary and test seam, but
+        # its timeout error is translated back so the adapter owns normalization.
+        try:
+            if self._active_worktree is None:
+                return self._run(cmd, check=False, timeout=timeout, input_text=input)
+            return self._run(cmd, check=False, timeout=timeout, input_text=input, cwd=self._active_worktree)
+        except AutopilotError as exc:
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout) from exc
+
     def _run_codex_review(self, step: dict) -> ReviewResult:
         prompt = self._codex_review_prompt(step)
         before_status = self._worktree_status()
         schema_path = self._write_review_output_schema()
         last_message_path = self._temporary_path(".txt")
+        runner_error: RunnerError | None = None
+        result = None
+        last_message = ""
         try:
-            cmd = [
-                *codex_base_cmd(self.review_effort),
-                "--output-schema",
-                str(schema_path),
-                "--output-last-message",
-                str(last_message_path),
-                "-",
-            ]
-            if self._active_worktree is None:
-                result = self._run(
-                    cmd,
-                    check=False,
+            runner = build_runner(process_runner=self._runner_process)
+            result = runner.review(
+                None,
+                RunnerRequest(
+                    prompt=prompt,
+                    mode="review",
+                    effort=self.review_effort,
+                    sandbox="read-only",
                     timeout=CODEX_EXEC_TIMEOUT,
-                    input_text=prompt,
-                )
-            else:
-                result = self._run(
-                    cmd,
-                    check=False,
-                    timeout=CODEX_EXEC_TIMEOUT,
-                    input_text=prompt,
-                    cwd=self._active_worktree,
-                )
-            last_message = (
-                last_message_path.read_text(encoding="utf-8")
-                if last_message_path.exists()
-                else ""
+                    output_schema=str(schema_path),
+                    output_last_message=str(last_message_path),
+                ),
             )
+            if result.thread_id:
+                self._runner_sessions[step["step"]] = RunnerSession(result.adapter, result.thread_id)
+            last_message = result.final_message
+        except RunnerError as exc:
+            runner_error = exc
         finally:
             schema_path.unlink(missing_ok=True)
             last_message_path.unlink(missing_ok=True)
@@ -1211,22 +1215,18 @@ class AutopilotRunner:
                 "자체 리뷰가 worktree를 변경했습니다.",
                 codex_passed=False,
             )
-        if result.returncode != 0:
+        if runner_error is not None:
+            return ReviewResult(False, ["자체 리뷰 실행 실패: runner error"], str(runner_error), codex_passed=False)
+        if result is None:
+            return ReviewResult(False, ["자체 리뷰 실행 실패: runner result 없음"], "자체 리뷰 실행 실패", codex_passed=False)
+        if not result.ok:
             return ReviewResult(
                 False,
-                [
-                    self._command_failure(
-                        [
-                            *codex_base_cmd(self.review_effort),
-                            "<review-prompt>",
-                        ],
-                        result,
-                    )
-                ],
+                [f"자체 리뷰 실행 실패: {result.error_kind or 'runner failure'}"],
                 "자체 리뷰 실행 실패",
                 codex_passed=False,
             )
-        parsed = self._review_from_text(last_message) or self._parse_review_result(result.stdout)
+        parsed = self._review_from_text(last_message)
         if parsed is None:
             parsed = self._parse_native_review_text(last_message)
         if parsed is None:
@@ -1473,18 +1473,15 @@ class AutopilotRunner:
             f"{review.to_markdown()}\n\n"
             "수정 후 가능한 검증을 실행하고, 수정한 파일은 working tree에 남겨두세요."
         )
-        cmd = codex_base_cmd(self.fix_effort)
-        # 프롬프트는 argv 대신 stdin으로 전달해서 ARG_MAX 한계를 피한다.
-        cmd.append("-")
-        if self._active_worktree is None:
-            self._run(cmd, timeout=CODEX_EXEC_TIMEOUT, input_text=prompt)
-        else:
-            self._run(
-                cmd,
-                timeout=CODEX_EXEC_TIMEOUT,
-                input_text=prompt,
-                cwd=self._active_worktree,
-            )
+        runner = build_runner(process_runner=self._runner_process)
+        request = RunnerRequest(prompt=prompt, effort=self.fix_effort, timeout=CODEX_EXEC_TIMEOUT)
+        # A review session begins read-only. Fix work must use its own write-capable session.
+        session = self._fix_sessions.get(step["step"])
+        result = runner.resume(session, request) if session is not None else runner.start(request)
+        if not result.ok:
+            raise AutopilotError(f"Codex review-fix runner 실패: {result.error_kind or result.exit_code}")
+        if result.thread_id:
+            self._fix_sessions[step["step"]] = RunnerSession(result.adapter, result.thread_id)
 
     def _commit_dirty_fix(self, step: dict):
         git_root = self._active_worktree or self.root

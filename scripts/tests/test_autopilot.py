@@ -410,7 +410,7 @@ def test_codex_review_uses_step_scoped_exec_prompt(runner):
     review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
 
     assert review.passed is True
-    assert seen["cmd"][:2] == [ap.CODEX_BIN, "exec"]
+    assert seen["cmd"][1] == "exec"
     assert "review" not in seen["cmd"][2:]
     assert "--base" not in seen["cmd"]
     assert ap.CODEX_ENV_CONFIG in seen["cmd"]
@@ -422,6 +422,73 @@ def test_codex_review_uses_step_scoped_exec_prompt(runner):
     assert seen["cmd"][-1] == "-"
     assert seen["input_text"].startswith("Read-only review only.")
     assert "Current Harness step is Step 0 `project-scaffold`" in seen["input_text"]
+
+
+def test_autopilot_delegates_review_to_runner_adapter(runner, monkeypatch):
+    seen = {}
+    runner._git = lambda *args, check=True: cp(stdout="")
+
+    class FakeRunner:
+        def review(self, session, request):
+            seen["request"] = request
+            return __import__("codex_runner").RunnerResult.success(
+                "exec", final_message='{"pass": true, "summary": "ok", "findings": []}'
+            )
+
+    monkeypatch.setattr(ap, "build_runner", lambda **kwargs: FakeRunner())
+    review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+
+    assert review.passed is True
+    assert seen["request"].mode == "review"
+    assert seen["request"].prompt.startswith("Read-only review only.")
+
+
+def test_runner_process_leaves_timeout_normalization_to_adapter(runner, monkeypatch):
+    def timed_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="codex", timeout=1)
+
+    monkeypatch.setattr(ap.subprocess, "run", timed_out)
+    with pytest.raises(subprocess.TimeoutExpired):
+        runner._runner_process(["codex"], input="", capture_output=True, text=True, timeout=1)
+
+
+def test_review_error_still_checks_worktree_immutability(runner, monkeypatch):
+    statuses = iter(["", " M unsafe.py"])
+    runner._worktree_status = lambda: next(statuses)
+
+    class FailingRunner:
+        def review(self, session, request):
+            raise __import__("codex_runner").RunnerExecutionError("timeout")
+
+    monkeypatch.setattr(ap, "build_runner", lambda **kwargs: FailingRunner())
+    review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+
+    assert review.passed is False
+    assert "changed the worktree" in review.findings[0]
+
+
+def test_review_and_fix_use_separate_sessions(runner, tmp_repo, monkeypatch):
+    calls = []
+
+    class FakeRunner:
+        name = "sdk"
+
+        def start(self, request):
+            calls.append("start")
+            return __import__("codex_runner").RunnerResult.success("sdk", thread_id="fix-session")
+
+        def resume(self, session, request):
+            calls.append("resume")
+            return __import__("codex_runner").RunnerResult.success("sdk", thread_id="fix-session")
+
+    monkeypatch.setattr(ap, "build_runner", lambda **kwargs: FakeRunner())
+    runner._runner_sessions[0] = __import__("codex_runner").RunnerSession("sdk", "review-session")
+    issue = ap.IssueRecord(1, "title", "body", tmp_repo / "issues" / "issue-1.md", "")
+
+    runner._invoke_codex_fix(issue, "codex/test", {"step": 0, "name": "project-scaffold"}, ap.ReviewResult(False, [], ""), 1)
+    runner._invoke_codex_fix(issue, "codex/test", {"step": 0, "name": "project-scaffold"}, ap.ReviewResult(False, [], ""), 2)
+
+    assert calls == ["start", "resume"]
 
 
 def test_codex_review_parses_output_last_message(runner):
@@ -520,7 +587,7 @@ def test_codex_fix_uses_medium_reasoning_effort(runner, tmp_repo):
         1,
     )
 
-    assert seen["cmd"][:2] == [ap.CODEX_BIN, "exec"]
+    assert seen["cmd"][1] == "exec"
     assert 'model_reasoning_effort="medium"' in seen["cmd"]
     assert ap.CODEX_ENV_CONFIG in seen["cmd"]
     assert ap.CODEX_ENV_SECRET_FILTER_CONFIG in seen["cmd"]
