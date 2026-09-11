@@ -4,6 +4,7 @@ import tomllib
 import pytest
 
 import codex_common
+import codex_runner
 
 
 def test_validate_codex_effort_rejects_xhigh_without_flag():
@@ -107,3 +108,114 @@ def test_read_acceptance_commands_extracts_fenced_commands(tmp_path):
 
 def test_configure_utf8_stdio_is_safe_to_call():
     codex_common.configure_utf8_stdio()
+
+
+def test_runner_uses_exec_by_default_and_sdk_requires_explicit_opt_in(monkeypatch):
+    monkeypatch.delenv("HARNESS_CODEX_RUNNER", raising=False)
+    assert codex_runner.runner_preference() == "exec"
+
+    monkeypatch.setenv("HARNESS_CODEX_RUNNER", "sdk")
+    assert codex_runner.runner_preference() == "sdk"
+
+
+def test_runner_rejects_unknown_preference_fail_closed(monkeypatch):
+    monkeypatch.setenv("HARNESS_CODEX_RUNNER", "unknown")
+    with pytest.raises(codex_runner.RunnerCapabilityError, match="HARNESS_CODEX_RUNNER"):
+        codex_runner.runner_preference()
+
+
+def test_exec_adapter_normalizes_thread_id_without_exposing_it_in_result():
+    completed = __import__("subprocess").CompletedProcess(
+        ["codex"], 0, '{"thread_id":"thread-secret","type":"turn.completed"}\n', ""
+    )
+    runner = codex_runner.ExecRunner(run_process=lambda *args, **kwargs: completed)
+
+    result = runner.run(codex_runner.RunnerSession("exec"), codex_runner.RunnerRequest(prompt="test"))
+
+    assert result.ok is True
+    assert result.thread_id == "thread-secret"
+    assert "thread-secret" not in result.to_record()
+
+
+def test_exec_adapter_resume_uses_session_id_and_preserves_stdin_safety():
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        seen["input"] = kwargs["input"]
+        return __import__("subprocess").CompletedProcess(cmd, 0, "", "")
+
+    runner = codex_runner.ExecRunner(run_process=fake_run)
+    runner.resume(codex_runner.RunnerSession("exec", "safe-session"), codex_runner.RunnerRequest(prompt="continue"))
+
+    assert seen["cmd"][1:3] == ["exec", "resume"]
+    assert "safe-session" in seen["cmd"]
+    assert seen["cmd"][-1] == "-"
+    assert seen["input"] == "continue"
+
+
+def test_sdk_capability_failure_falls_back_once_to_exec():
+    fallback = []
+
+    class BrokenSdk:
+        name = "sdk"
+
+        def start(self, request):
+            raise codex_runner.RunnerCapabilityError("pinned runtime mismatch")
+
+    class Exec:
+        name = "exec"
+
+        def start(self, request):
+            fallback.append(request)
+            return codex_runner.RunnerResult.success("exec", fallback_reason="pinned runtime mismatch")
+
+    result = codex_runner.FallbackRunner(BrokenSdk(), Exec()).start(codex_runner.RunnerRequest(prompt="safe"))
+    assert result.ok is True
+    assert result.adapter == "exec"
+    assert result.fallback_reason == "pinned runtime mismatch"
+    assert len(fallback) == 1
+
+
+def test_nonrecoverable_sdk_error_does_not_fallback():
+    class BrokenSdk:
+        name = "sdk"
+
+        def start(self, request):
+            raise codex_runner.RunnerExecutionError("approval denied", recoverable=False)
+
+    class Exec:
+        name = "exec"
+
+        def start(self, request):
+            raise AssertionError("non-recoverable errors must not retry through exec")
+
+    with pytest.raises(codex_runner.RunnerExecutionError, match="approval denied"):
+        codex_runner.FallbackRunner(BrokenSdk(), Exec()).start(codex_runner.RunnerRequest(prompt="safe"))
+
+
+def test_executor_and_autopilot_do_not_assemble_codex_argv_directly():
+    root = Path(__file__).resolve().parents[2]
+    for path in (root / "scripts" / "execute.py", root / "scripts" / "autopilot.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "codex_base_cmd" not in source
+        assert "resolve_codex_bin" not in source
+
+
+def test_sdk_timeout_is_fail_closed_after_bounded_cleanup():
+    class Thread:
+        id = "ephemeral-thread"
+
+        def run(self, prompt):
+            __import__("time").sleep(0.05)
+
+        def interrupt(self):
+            return None
+
+    runner = codex_runner.SdkRunner.__new__(codex_runner.SdkRunner)
+    runner._codex = type("Client", (), {"close": lambda self: None})()
+    result = runner._run_thread(Thread(), codex_runner.RunnerRequest(prompt="slow", timeout=0))
+
+    assert result.ok is False
+    assert result.exit_code == 124
+    assert result.error_kind == "timeout"

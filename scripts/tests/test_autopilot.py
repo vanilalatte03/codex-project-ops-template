@@ -410,7 +410,7 @@ def test_codex_review_uses_step_scoped_exec_prompt(runner):
     review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
 
     assert review.passed is True
-    assert seen["cmd"][:2] == [ap.CODEX_BIN, "exec"]
+    assert seen["cmd"][1] == "exec"
     assert "review" not in seen["cmd"][2:]
     assert "--base" not in seen["cmd"]
     assert ap.CODEX_ENV_CONFIG in seen["cmd"]
@@ -422,6 +422,25 @@ def test_codex_review_uses_step_scoped_exec_prompt(runner):
     assert seen["cmd"][-1] == "-"
     assert seen["input_text"].startswith("Read-only review only.")
     assert "Current Harness step is Step 0 `project-scaffold`" in seen["input_text"]
+
+
+def test_autopilot_delegates_review_to_runner_adapter(runner, monkeypatch):
+    seen = {}
+    runner._git = lambda *args, check=True: cp(stdout="")
+
+    class FakeRunner:
+        def review(self, session, request):
+            seen["request"] = request
+            return __import__("codex_runner").RunnerResult.success(
+                "exec", final_message='{"pass": true, "summary": "ok", "findings": []}'
+            )
+
+    monkeypatch.setattr(ap, "build_runner", lambda **kwargs: FakeRunner())
+    review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+
+    assert review.passed is True
+    assert seen["request"].mode == "review"
+    assert seen["request"].prompt.startswith("Read-only review only.")
 
 
 def test_codex_review_parses_output_last_message(runner):
@@ -520,7 +539,7 @@ def test_codex_fix_uses_medium_reasoning_effort(runner, tmp_repo):
         1,
     )
 
-    assert seen["cmd"][:2] == [ap.CODEX_BIN, "exec"]
+    assert seen["cmd"][1] == "exec"
     assert 'model_reasoning_effort="medium"' in seen["cmd"]
     assert ap.CODEX_ENV_CONFIG in seen["cmd"]
     assert ap.CODEX_ENV_SECRET_FILTER_CONFIG in seen["cmd"]

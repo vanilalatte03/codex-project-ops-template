@@ -11,6 +11,7 @@
 
 ```text
 scripts/
+  codex_runner.py  # exec 기본/SDK opt-in, 정규화 결과와 bounded fallback 경계
   execute.py       # 한 task의 구현과 acceptance 재검증
   autopilot.py     # task별 PR, review, merge 직렬 루프
   worktree.py      # task worktree와 administrative marker lifecycle
@@ -33,6 +34,10 @@ phases/{phase}/
   phase 상태 기록을 수행한다.
 - `autopilot.py`: primary의 repository lock 안에서 base fetch, worktree 준비,
   execute subprocess, PR/review/merge, 성공 정리를 한 번에 하나씩 조정한다.
+- `codex_runner.py`: `start`, `run`, `resume`, `review`, `interrupt` 공통 contract와
+  비민감 정규화 결과를 제공한다. production 기본은 `codex exec`이며 Python SDK는
+  명시 opt-in이다. SDK pin/capability/실행 오류는 기존 sandbox·approval·환경 정책을
+  가진 exec 경로로만 recoverable fallback한다.
 
 ## 데이터 흐름
 

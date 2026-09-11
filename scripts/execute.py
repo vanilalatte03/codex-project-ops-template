@@ -29,16 +29,14 @@ from codex_common import (
     CODEX_EXEC_TIMEOUT,
     CODEX_ENV_CONFIG,
     CODEX_ENV_SECRET_FILTER_CONFIG,
-    codex_base_cmd,
     configure_utf8_stdio,
     read_acceptance_commands,
-    resolve_codex_bin,
     validate_codex_effort,
 )
+from codex_runner import RunnerRequest, build_runner
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CODEX_EFFORT = "medium"
-CODEX_BIN = resolve_codex_bin()
 
 
 class GuardrailReferenceError(RuntimeError):
@@ -598,54 +596,28 @@ class StepExecutor:
 
         # step 문서는 _build_preamble에서 필요한 섹션만 추려 전달한다.
         # 전체 문서 본문을 다시 붙이면 progressive disclosure 계약을 깨뜨린다.
-        prompt = preamble
-        cmd = codex_base_cmd(self._codex_effort)
-        if self._unsafe:
-            cmd.append("--dangerously-bypass-approvals-and-sandbox")
-        # 프롬프트는 argv 대신 stdin으로 전달해서 ARG_MAX 한계를 피한다.
-        cmd.append("-")
-        try:
-            result = subprocess.run(
-                cmd,
-                input=prompt,
-                cwd=self._root,
-                capture_output=True,
-                text=True,
+        runner = build_runner()
+        result = runner.start(
+            RunnerRequest(
+                prompt=preamble,
+                effort=self._codex_effort,
                 timeout=CODEX_EXEC_TIMEOUT,
+                unsafe=self._unsafe,
             )
-            returncode, stdout, stderr = result.returncode, result.stdout, result.stderr
-        except subprocess.TimeoutExpired as exc:
-            returncode = 124
-            stdout = self._timeout_output(exc.stdout)
-            stderr = self._timeout_output(exc.stderr)
-            timeout_msg = f"codex exec이 {CODEX_EXEC_TIMEOUT}초 안에 끝나지 않아 중단했습니다."
-            stderr = "\n".join(part for part in (stderr, timeout_msg) if part)
-
-        if returncode != 0:
-            print(f"\n  WARN: Codex가 비정상 종료됨 (code {returncode})")
-            if stderr:
-                print(f"  stderr: {stderr[:500]}")
+        )
+        if not result.ok:
+            print(f"\n  WARN: Codex runner가 비정상 종료됨 (code {result.exit_code}, {result.error_kind or 'unknown'})")
 
         output = {
             "step": step_num,
             "name": step_name,
-            "exitCode": returncode,
-            "stdout": stdout,
-            "stderr": stderr,
+            **result.to_record(),
         }
         out_path = self._phase_dir / f"step{step_num}-output.json"
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(output, f, indent=2, ensure_ascii=False)
 
         return output
-
-    @staticmethod
-    def _timeout_output(value: object) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, bytes):
-            return value.decode("utf-8", "replace")
-        return str(value)
 
     # --- 헤더 & 검증 ---
 
