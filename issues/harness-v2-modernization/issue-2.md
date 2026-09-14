@@ -1,4 +1,4 @@
-# Issue 2: Step 6 SDK caller-deadline 외부 리뷰 차단
+# Issue 2: Step 6 runner-adapter 병합 예외와 검증 한계
 
 ## 상태
 
@@ -6,8 +6,9 @@
 - Step: `6 runner-adapter`
 - GitHub Issue: `#19`
 - PR: `#32`
-- 분류: 외부 read-only review P1 및 재리뷰 횟수 소진
-- 현재 상태: 차단 — 수정은 반영됐으나 외부 CLEAR 재검증 대기
+- 분류: 외부 read-only review P1 수정, 재리뷰 횟수 소진, 명시적 병합 예외
+- 현재 상태: 완료(병합 예외) — PR #32가 `develop`에 병합됐지만 최종 외부 CLEAR는
+  확인하지 못했다.
 
 ## 현상과 수정
 
@@ -26,12 +27,17 @@ close를 시도해도, 종료되지 않은 turn이 worktree를 계속 변경할 
 - 재리뷰 2회: SDK caller-deadline turn의 잔류 실행 P1 1건을 확인했고, 위 fallback
   경계로 로컬 수정했다.
 
-계약상 재리뷰은 최대 2회이므로 추가 외부 재리뷰 없이 PR을 Draft로 유지한다.
+계약상 재리뷰는 최대 2회이므로 당시에는 추가 외부 재리뷰 없이 PR을 Draft로
+유지했다. 이후 사용자가 최종 외부 CLEAR 미확보 사실을 인지한 상태에서 PR #32의
+병합을 예외로 승인했고, 병합 커밋 `19ce1b52c62b03b0d346466c39f209c230a1c464`이
+`develop`에 반영됐다.
 
-## 복구 조건
+## 판정과 후속 경계
 
-사용자가 추가 외부 재리뷰 또는 동등한 독립 검증을 승인한 뒤, 고정 head에서 CLEAR를
-확인한다. 그 전에는 Step 6을 완료로 표시하거나 PR을 Ready로 전환하지 않는다.
+Step 6의 상태 `completed`는 위 병합 예외를 반영한 진행 상태이며, 외부 read-only
+review의 CLEAR가 있었다는 뜻이 아니다. 추가 외부 재리뷰 또는 동등한 독립 검증이
+필요하면 새 승인과 별도 작업으로 수행하고, 그 결과를 PR #32의 기존 검증으로
+소급해 표현하지 않는다.
 
 ## 로컬 검증
 
