@@ -46,8 +46,8 @@
     {
       "step": 6,
       "name": "runner-adapter",
-      "status": "blocked",
-      "blocked_reason": "외부 read-only review의 SDK caller-deadline 안전성 P1은 수정했지만, 허용된 재리뷰 2회를 모두 사용하여 CLEAR 재검증이 필요하다."
+      "status": "completed",
+      "summary": "PR #32는 외부 CLEAR 미확보 사실을 남긴 명시적 병합 예외로 develop에 반영됐다. caller-deadline P1 수정과 로컬 검증 증거는 issue-2에 보존하며, 이를 외부 CLEAR로 표현하지 않는다."
     },
     { "step": 7, "name": "resumable-telemetry", "status": "pending" },
     { "step": 8, "name": "risk-based-review", "status": "pending" },
