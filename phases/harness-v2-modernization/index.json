@@ -49,7 +49,13 @@
       "status": "completed",
       "summary": "PR #32는 외부 CLEAR 미확보 사실을 남긴 명시적 병합 예외로 develop에 반영됐다. caller-deadline P1 수정과 로컬 검증 증거는 issue-2에 보존하며, 이를 외부 CLEAR로 표현하지 않는다."
     },
-    { "step": 7, "name": "resumable-telemetry", "status": "pending" },
+    {
+      "step": 7,
+      "name": "resumable-telemetry",
+      "issue": 20,
+      "status": "completed",
+      "summary": "Git 관리 영역에 원자적 local run state를 추가해 동일 task identity 재개, stale process 식별, PR/merge action idempotency와 민감값 redaction을 autopilot에 연결했다."
+    },
     { "step": 8, "name": "risk-based-review", "status": "pending" },
     { "step": 9, "name": "bounded-dag", "status": "pending" },
     { "step": 10, "name": "release-eval", "status": "pending" }

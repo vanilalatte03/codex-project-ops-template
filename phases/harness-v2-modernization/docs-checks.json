@@ -69,6 +69,11 @@
       "name": "Python SDK exec fallback contract",
       "paths": ["phases/harness-v2-modernization/COMPATIBILITY.md"],
       "pattern": "SDK-CONDITIONAL-GO-0\\.147\\.0-EXEC-FALLBACK"
+    },
+    {
+      "name": "local resumable run state contract",
+      "paths": ["docs/RUN_STATE.md"],
+      "pattern": "Local run state 계약"
     }
   ],
   "finalRequired": [],

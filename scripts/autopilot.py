@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import guard
+import run_state
 import task_schema
 import worktree
 from codex_common import (
@@ -213,6 +214,8 @@ class AutopilotRunner:
         self._global_scope_rules_cache: dict | None = None
         self._runner_sessions: dict[int, RunnerSession] = {}
         self._fix_sessions: dict[int, RunnerSession] = {}
+        self._run_states = run_state.RunStateStore.for_repository(self.root)
+        self._active_run: run_state.RunState | None = None
 
     # --- command helpers ---
 
@@ -341,10 +344,17 @@ class AutopilotRunner:
                 handle = self._active_handle
 
             try:
+                self._active_run = self._activate_run_state(step, handle)
                 # execute.py is invoked from the task worktree. In a test-only
                 # fake root without Git, the legacy two-argument call remains
                 # useful for exercising PR/review orchestration in isolation.
-                self._run_step(branch, step)
+                if self._active_run.status == "running":
+                    self._run_step(branch, step)
+                    self._transition_run("implemented", verification_status="passed")
+                elif self._active_run.status not in {"implemented", "reviewing", "ready"}:
+                    raise AutopilotError(
+                        f"재개할 수 없는 run state입니다: {self._active_run.status}"
+                    )
                 if handle is not None:
                     handle = self._lifecycle.transition(
                         handle,
@@ -353,11 +363,18 @@ class AutopilotRunner:
                     )
                     self._active_handle = handle
 
-                pr_url = self._create_pr(branch, step)
+                pr_url = self._active_run.completed_actions.get("pr-created")
+                if pr_url is None:
+                    pr_url = self._create_pr(branch, step)
+                    self._complete_run_action("pr-created", pr_url)
                 if handle is not None:
                     handle = self._lifecycle.transition(handle, "reviewing")
                     self._active_handle = handle
-                self._review_and_fix_until_passed(pr_url, branch, step)
+                if self._active_run.status == "implemented":
+                    self._transition_run("reviewing")
+                if self._active_run.status == "reviewing":
+                    self._review_and_fix_until_passed(pr_url, branch, step)
+                    self._transition_run("ready", review_status="passed")
 
                 if handle is not None:
                     handle = self._lifecycle.transition(
@@ -366,7 +383,10 @@ class AutopilotRunner:
                         head_sha=self._worktree_head(handle.path),
                     )
                     self._active_handle = handle
-                self._mark_ready_and_merge(pr_url)
+                if self._active_run.status == "ready":
+                    self._mark_ready_and_merge(pr_url)
+                    self._complete_run_action("merged", pr_url)
+                    self._transition_run("merged")
                 merged_prs.append(pr_url)
 
                 if handle is not None:
@@ -387,10 +407,15 @@ class AutopilotRunner:
                             file=sys.stderr,
                         )
             except KeyboardInterrupt as exc:
+                self._transition_run("interrupted", error="사용자 중단")
                 if handle is not None:
                     self._preserve_worktree_failure(handle, "interrupted", "사용자 중단")
                 raise
             except (AutopilotError, worktree.WorktreeLifecycleError) as exc:
+                self._transition_run(
+                    "blocked" if getattr(exc, "blocked", False) else "error",
+                    error=str(exc),
+                )
                 if handle is not None:
                     status = "blocked" if getattr(exc, "blocked", False) else "error"
                     self._preserve_worktree_failure(handle, status, str(exc))
@@ -400,6 +425,7 @@ class AutopilotRunner:
             finally:
                 self._active_handle = None
                 self._active_worktree = None
+                self._active_run = None
 
             self._sync_base()
 
@@ -435,6 +461,69 @@ class AutopilotRunner:
             base_ref=base_ref,
             base_sha=base_sha,
         )
+
+    def _run_task_id(self, step: dict) -> str:
+        return str(step.get("id") or f"{self.phase}:step{step['step']}:{step['name']}")
+
+    def _activate_run_state(
+        self,
+        step: dict,
+        handle: worktree.WorktreeHandle | None,
+    ) -> run_state.RunState:
+        issue = step.get("issue")
+        identity = run_state.RunIdentity(
+            phase=self.phase,
+            task_id=self._run_task_id(step),
+            issue=issue if isinstance(issue, int) and not isinstance(issue, bool) else None,
+            branch=self._step_branch(step),
+            worktree_path=(handle.path if handle is not None else self.root).resolve(),
+            model=None,
+            effort=self.step_effort,
+        )
+        state = self._run_states.begin(identity)
+        if state.status == "created":
+            return self._run_states.transition(state.identity.task_id, "running", process_id=os.getpid())
+        if state.status in run_state.PRESERVED_STATUSES:
+            return self._run_states.resume(state.identity.task_id, process_id=os.getpid())
+        if state.status == "running":
+            if not self._run_states.is_stale(state.identity.task_id):
+                raise AutopilotError(
+                    f"동일 task의 활성 run state가 남아 있어 재개하지 않습니다: {state.identity.task_id}"
+                )
+            self._run_states.transition(
+                state.identity.task_id,
+                "interrupted",
+                diagnostic="stale process를 확인해 동일 task를 재개합니다",
+            )
+            return self._run_states.resume(state.identity.task_id, process_id=os.getpid())
+        if state.status == "merged":
+            raise AutopilotError(f"이미 merged 상태인 task는 재개하지 않습니다: {state.identity.task_id}")
+        return state
+
+    def _transition_run(self, status: str, **kwargs) -> None:
+        if self._active_run is None:
+            return
+        try:
+            self._active_run = self._run_states.transition(
+                self._active_run.identity.task_id,
+                status,
+                **kwargs,
+            )
+        except run_state.RunStateError as exc:
+            raise AutopilotError(f"run state 기록 실패: {exc}") from exc
+
+    def _complete_run_action(self, action: str, fingerprint: str) -> bool:
+        if self._active_run is None:
+            return True
+        try:
+            self._active_run, changed = self._run_states.complete_action(
+                self._active_run.identity.task_id,
+                action,
+                fingerprint,
+            )
+            return changed
+        except run_state.RunStateError as exc:
+            raise AutopilotError(f"run action 기록 실패: {exc}") from exc
 
     def _worktree_head(self, path: Path) -> str:
         result = self._run(["git", "rev-parse", "HEAD"], cwd=path)
@@ -870,7 +959,16 @@ class AutopilotRunner:
                     ) from exc
 
     def _mark_ready_and_merge(self, pr_url: str):
-        self._gh("pr", "ready", pr_url)
+        if self._active_run is not None and "merged" in self._active_run.completed_actions:
+            return
+        state = self._gh(
+            "pr", "view", pr_url, "--json", "state", "--jq", ".state", check=False
+        )
+        if state.returncode == 0 and state.stdout.strip() == "MERGED":
+            return
+        if self._active_run is None or "pr-ready" not in self._active_run.completed_actions:
+            self._gh("pr", "ready", pr_url)
+            self._complete_run_action("pr-ready", pr_url)
         self._wait_for_pr_checks(pr_url)
         self._gh("pr", "merge", pr_url, "--squash", "--delete-branch")
 
@@ -1198,6 +1296,8 @@ class AutopilotRunner:
             )
             if result.thread_id:
                 self._runner_sessions[step["step"]] = RunnerSession(result.adapter, result.thread_id)
+                if self._active_run is not None:
+                    self._transition_run("reviewing", thread_id=result.thread_id)
             last_message = result.final_message
         except RunnerError as exc:
             runner_error = exc
@@ -1482,6 +1582,8 @@ class AutopilotRunner:
             raise AutopilotError(f"Codex review-fix runner 실패: {result.error_kind or result.exit_code}")
         if result.thread_id:
             self._fix_sessions[step["step"]] = RunnerSession(result.adapter, result.thread_id)
+            if self._active_run is not None:
+                self._transition_run("reviewing", thread_id=result.thread_id)
 
     def _commit_dirty_fix(self, step: dict):
         git_root = self._active_worktree or self.root

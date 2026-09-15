@@ -6,6 +6,7 @@ tsconfig.tsbuildinfo
 __pycache__/
 *.pyc
 .codex/autopilot.lock
+.codex/run-state/
 
 # phase execution outputs
 phases/**/phase*-output.json

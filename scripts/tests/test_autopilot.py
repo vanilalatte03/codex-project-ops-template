@@ -159,6 +159,35 @@ def test_run_step_uses_task_worktree_as_cwd(runner, tmp_repo):
     assert seen["cmd"][1] == str(worktree_path / "scripts" / "execute.py")
 
 
+def test_run_state_reconciles_same_task_after_interruption(runner, tmp_repo):
+    step = {"step": 0, "name": "project-scaffold", "issue": 20}
+    state = runner._activate_run_state(step, None)
+    task_id = state.identity.task_id
+    runner._run_states.transition(task_id, "interrupted", error="process stopped")
+
+    resumed = runner._activate_run_state(step, None)
+
+    assert resumed.status == "running"
+    assert resumed.attempt == 1
+    assert resumed.identity.issue == 20
+    assert resumed.identity.worktree_path == tmp_repo.resolve()
+
+
+def test_merge_reconcile_skips_already_merged_pr(runner):
+    calls = []
+
+    def fake_gh(*args, check=True, timeout=None):
+        calls.append(args)
+        if args[:2] == ("pr", "view"):
+            return cp(stdout="MERGED\n")
+        raise AssertionError(f"unexpected GitHub mutation: {args}")
+
+    runner._gh = fake_gh
+    runner._mark_ready_and_merge("https://example.test/pr/20")
+
+    assert calls == [("pr", "view", "https://example.test/pr/20", "--json", "state", "--jq", ".state")]
+
+
 def test_step_success_creates_draft_pr_comments_and_merges(runner, tmp_repo):
     gh_calls = []
     executed = []

@@ -12,6 +12,7 @@
 ```text
 scripts/
   codex_runner.py  # exec 기본/SDK opt-in, 정규화 결과와 bounded fallback 경계
+  run_state.py     # Git 관리 영역의 원자적 local run state와 재개·redaction 계약
   execute.py       # 한 task의 구현과 acceptance 재검증
   autopilot.py     # task별 PR, review, merge 직렬 루프
   worktree.py      # task worktree와 administrative marker lifecycle
@@ -30,6 +31,9 @@ phases/{phase}/
   view를 제공한다. DAG scheduler나 migration은 담당하지 않는다.
 - `worktree.py`: Git worktree add/list/resume/remove와 Harness 소유권 marker,
   base SHA, 정리 gate를 담당한다. primary 파일과 사용자 branch를 수정하지 않는다.
+- `run_state.py`: run/task/issue/worktree/branch/model/effort/attempt와 검증·리뷰
+  상태를 Git 관리 영역에 원자적으로 기록한다. prompt·응답·credential은 받지 않으며,
+  runner thread 식별자는 local resume에만 보관하고 commit-safe record에서는 제외한다.
 - `execute.py`: 이미 선택된 task worktree에서 Codex 구현, acceptance 재검증,
   phase 상태 기록을 수행한다.
 - `autopilot.py`: primary의 repository lock 안에서 base fetch, worktree 준비,
@@ -46,6 +50,7 @@ phase index
   -> task_schema validation
   -> origin/<base> fetch + base SHA pin
   -> isolated task worktree + admin marker
+  -> local run state (atomic transition / resume / idempotent action)
   -> execute.py (implementation -> acceptance)
   -> PR draft -> local/scope/read-only review -> ready -> CI -> squash merge
   -> merged/clean/head/owner gate -> safe cleanup
@@ -57,7 +62,8 @@ phase index
 ## 상태와 저장소
 
 - 영속 상태: phase index는 프로젝트 파일, task marker는 Git administrative
-  directory의 `harness-worktree.json`에 둔다.
+  directory의 `harness-worktree.json`, run state는 Git administrative directory의
+  `harness-runs/`에 둔다.
 - 임시 상태: task worktree는 primary 밖의 managed root에 둔다.
 - 마이그레이션 전략: v1/v2 index와 사용자 worktree/branch는 자동 migration하지
   않는다. marker가 없는 기존 checkout은 소유권을 추측하지 않고 보존한다.
