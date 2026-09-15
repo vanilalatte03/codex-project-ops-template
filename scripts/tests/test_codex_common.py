@@ -32,6 +32,16 @@ def test_codex_base_cmd_uses_stdin_compatible_exec_shape():
     assert "shell_environment_policy.exclude" not in cmd
 
 
+def test_codex_review_cmd_uses_native_review_with_shared_environment_policy():
+    cmd = codex_common.codex_review_cmd("high")
+
+    assert cmd[1] == "review"
+    assert "--json" not in cmd
+    assert 'model_reasoning_effort="high"' in cmd
+    assert codex_common.CODEX_ENV_CONFIG in cmd
+    assert codex_common.CODEX_ENV_SECRET_FILTER_CONFIG in cmd
+
+
 def test_codex_project_config_declares_minimal_policy_and_extension_point():
     config_path = Path(__file__).resolve().parents[2] / ".codex" / "config.toml"
     config = tomllib.loads(config_path.read_text(encoding="utf-8"))
@@ -152,6 +162,50 @@ def test_exec_adapter_resume_uses_session_id_and_preserves_stdin_safety():
     assert "safe-session" in seen["cmd"]
     assert seen["cmd"][-1] == "-"
     assert seen["input"] == "continue"
+
+
+def test_exec_review_prefers_native_command_with_explicit_base_and_stdin():
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        seen["input"] = kwargs["input"]
+        return __import__("subprocess").CompletedProcess(cmd, 0, "No issues found", "")
+
+    runner = codex_runner.ExecRunner(run_process=fake_run)
+    result = runner.review(
+        None,
+        codex_runner.RunnerRequest(prompt="review this", review_base="origin/develop"),
+    )
+
+    assert result.ok is True
+    assert result.adapter == "native-review"
+    assert seen["cmd"][1] == "review"
+    assert seen["cmd"][seen["cmd"].index("--base") + 1] == "origin/develop"
+    assert seen["cmd"][-1] == "-"
+    assert seen["input"] == "review this"
+
+
+def test_exec_review_falls_back_to_legacy_read_only_exec_on_native_failure():
+    commands = []
+
+    def fake_run(cmd, **kwargs):
+        commands.append(cmd)
+        if cmd[1] == "review":
+            return __import__("subprocess").CompletedProcess(cmd, 2, "", "unsupported")
+        return __import__("subprocess").CompletedProcess(
+            cmd, 0, '{"pass": true, "summary": "ok", "findings": []}', ""
+        )
+
+    result = codex_runner.ExecRunner(run_process=fake_run).review(
+        None,
+        codex_runner.RunnerRequest(prompt="review this", review_base="origin/develop"),
+    )
+
+    assert result.ok is True
+    assert result.adapter == "exec"
+    assert result.fallback_reason == "native review failed"
+    assert [command[1] for command in commands] == ["review", "exec"]
 
 
 def test_sdk_capability_failure_falls_back_once_to_exec():

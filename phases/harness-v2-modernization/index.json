@@ -56,7 +56,13 @@
       "status": "completed",
       "summary": "Git 관리 영역에 원자적 local run state를 추가해 동일 task identity 재개, stale process 식별, PR/merge action idempotency와 민감값 redaction을 autopilot에 연결했다."
     },
-    { "step": 8, "name": "risk-based-review", "status": "pending" },
+    {
+      "step": 8,
+      "name": "risk-based-review",
+      "issue": 21,
+      "status": "completed",
+      "summary": "Native CLI review를 우선 사용하고 실패 시 기존 JSON read-only review로 fallback하며, high·critical task에만 high-risk specialist를 추가해 worktree 불변과 기존 gate를 유지했다."
+    },
     { "step": 9, "name": "bounded-dag", "status": "pending" },
     { "step": 10, "name": "release-eval", "status": "pending" }
   ]

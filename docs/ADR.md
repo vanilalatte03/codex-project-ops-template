@@ -11,3 +11,4 @@
 - [ADR-0003: Outcome task schema v2와 v1 호환](adr/0003-outcome-task-schema-v2.md)
 - [ADR-0004: Isolated task worktree lifecycle](adr/0004-isolated-task-worktrees.md)
 - [ADR-0005: Python Codex SDK 조건부 도입과 exec fallback](adr/0005-python-codex-sdk-spike.md)
+- [ADR-0006: Native review fallback과 위험도별 reviewer](adr/0006-native-review-risk-policy.md)
