@@ -423,31 +423,27 @@ def test_codex_review_prompt_excludes_issue_records_and_uses_step_contract(runne
     assert "instead of assuming `python` or `py` is available on PATH" in prompt
 
 
-def test_codex_review_uses_step_scoped_exec_prompt(runner):
+def test_codex_review_uses_step_scoped_native_prompt(runner):
     seen = {}
     runner._git = lambda *args, check=True: cp(stdout="")
 
     def fake_run(cmd, check=True, timeout=None, input_text=None):
         seen["cmd"] = cmd
         seen["input_text"] = input_text
-        schema_path = Path(cmd[cmd.index("--output-schema") + 1])
-        seen["schema"] = json.loads(schema_path.read_text(encoding="utf-8"))
-        return cp(stdout='{"pass": true, "summary": "ok", "findings": []}')
+        return cp(stdout="No issues found")
 
     runner._run = fake_run
 
     review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
 
     assert review.passed is True
-    assert seen["cmd"][1] == "exec"
-    assert "review" not in seen["cmd"][2:]
-    assert "--base" not in seen["cmd"]
+    assert seen["cmd"][1] == "review"
+    assert seen["cmd"][seen["cmd"].index("--base") + 1] == "origin/main"
     assert ap.CODEX_ENV_CONFIG in seen["cmd"]
     assert ap.CODEX_ENV_SECRET_FILTER_CONFIG in seen["cmd"]
-    assert "--output-schema" in seen["cmd"]
-    assert seen["schema"]["required"] == ["pass", "summary", "findings"]
-    assert "--output-last-message" in seen["cmd"]
-    assert "--json" in seen["cmd"]
+    assert "--output-schema" not in seen["cmd"]
+    assert "--output-last-message" not in seen["cmd"]
+    assert "--json" not in seen["cmd"]
     assert seen["cmd"][-1] == "-"
     assert seen["input_text"].startswith("Read-only review only.")
     assert "Current Harness step is Step 0 `project-scaffold`" in seen["input_text"]
@@ -469,6 +465,8 @@ def test_autopilot_delegates_review_to_runner_adapter(runner, monkeypatch):
 
     assert review.passed is True
     assert seen["request"].mode == "review"
+    assert seen["request"].native_review is True
+    assert seen["request"].review_base == "origin/main"
     assert seen["request"].prompt.startswith("Read-only review only.")
 
 
@@ -523,14 +521,20 @@ def test_review_and_fix_use_separate_sessions(runner, tmp_repo, monkeypatch):
 def test_codex_review_parses_output_last_message(runner):
     runner._git = lambda *args, check=True: cp(stdout="")
 
-    def fake_run(cmd, check=True, timeout=None, input_text=None):
-        last_message_path = Path(cmd[cmd.index("--output-last-message") + 1])
-        last_message_path.write_text('{"pass": true, "summary": "ok", "findings": []}', encoding="utf-8")
-        return cp(stdout='{"type":"started"}')
+    class LegacyRunner:
+        def review(self, session, request):
+            Path(request.output_last_message).write_text(
+                '{"pass": true, "summary": "ok", "findings": []}', encoding="utf-8"
+            )
+            return __import__("codex_runner").RunnerResult.success("exec")
 
-    runner._run = fake_run
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(ap, "build_runner", lambda **kwargs: LegacyRunner())
 
-    review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+    try:
+        review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+    finally:
+        monkeypatch.undo()
 
     assert review.passed is True
     assert review.summary == "ok"
@@ -539,19 +543,24 @@ def test_codex_review_parses_output_last_message(runner):
 def test_codex_review_parses_native_priority_findings(runner):
     runner._git = lambda *args, check=True: cp(stdout="")
 
-    def fake_run(cmd, check=True, timeout=None, input_text=None):
-        last_message_path = Path(cmd[cmd.index("--output-last-message") + 1])
-        last_message_path.write_text(
-            "Review comment:\n\n"
-            "- [P2] Pass step-scoped review instructions to Codex - scripts/autopilot.py:410\n"
-            "  The review lacks the step contract.",
-            encoding="utf-8",
-        )
-        return cp(stdout='{"type":"turn.completed"}')
+    class NativeRunner:
+        def review(self, session, request):
+            return __import__("codex_runner").RunnerResult.success(
+                "native-review",
+                final_message=(
+                    "Review comment:\n\n"
+                    "- [P2] Pass step-scoped review instructions to Codex - scripts/autopilot.py:410\n"
+                    "  The review lacks the step contract."
+                ),
+            )
 
-    runner._run = fake_run
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(ap, "build_runner", lambda **kwargs: NativeRunner())
 
-    review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+    try:
+        review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
+    finally:
+        monkeypatch.undo()
 
     assert review.passed is False
     assert review.codex_passed is False
@@ -584,7 +593,7 @@ def test_codex_review_uses_high_reasoning_effort_by_default(runner):
 
     def fake_run(cmd, check=True, timeout=None, input_text=None):
         seen["cmd"] = cmd
-        return cp(stdout='{"pass": true, "summary": "ok", "findings": []}')
+        return cp(stdout="No issues found")
 
     runner._run = fake_run
 
@@ -628,7 +637,7 @@ def test_codex_review_fails_if_worktree_changes(runner):
     statuses = iter([cp(stdout=""), cp(stdout=" M src/app.py\n")])
     runner._git = lambda *args, check=True: next(statuses)
     runner._run = lambda cmd, check=True, timeout=None, input_text=None: cp(
-        stdout='{"pass": true, "summary": "ok", "findings": []}'
+        stdout="No issues found"
     )
 
     review = runner._run_codex_review({"step": 0, "name": "project-scaffold"})
@@ -648,8 +657,8 @@ def test_review_gate_passes_current_step_to_codex_review(runner):
             return cp()
         raise AssertionError(command)
 
-    def fake_codex(current_step):
-        seen["codex"] = current_step
+    def fake_codex(current_step, *, reviewer):
+        seen.setdefault("codex", []).append((current_step, reviewer))
         return ap.ReviewResult(True, [], "ok")
 
     runner._run_shell = fake_shell
@@ -659,7 +668,26 @@ def test_review_gate_passes_current_step_to_codex_review(runner):
     review = runner._run_review_gate(step)
 
     assert review.passed is True
-    assert seen == {"codex": step}
+    assert seen == {"codex": [(step, ap.GENERAL_REVIEWER)]}
+
+
+def test_review_gate_adds_specialist_only_for_high_risk_task(runner):
+    calls = []
+    runner._review_check_commands = lambda step: ()
+    runner._scan_scope_diff = lambda step: []
+
+    def fake_codex(step, *, reviewer):
+        calls.append(reviewer)
+        return ap.ReviewResult(True, [], "ok")
+
+    runner._run_codex_review = fake_codex
+
+    review = runner._run_review_gate({"step": 1, "name": "migration", "risk": "high"})
+
+    assert review.passed is True
+    assert calls == [ap.GENERAL_REVIEWER, ap.HIGH_RISK_REVIEWER]
+    assert ap.AutopilotRunner._reviewers_for({"risk": "medium"}) == (ap.GENERAL_REVIEWER,)
+    assert ap.AutopilotRunner._reviewers_for({}) == (ap.GENERAL_REVIEWER,)
 
 
 def test_review_markdown_is_table_and_dedupes_findings():
@@ -752,7 +780,7 @@ def test_review_gate_blocks_dangerous_acceptance_command(runner, tmp_repo):
     shell_calls = []
     runner._run_shell = lambda command, check=True, timeout=None: shell_calls.append(command) or cp()
     runner._scan_scope_diff = lambda current_step: []
-    runner._run_codex_review = lambda current_step: ap.ReviewResult(True, [], "ok")
+    runner._run_codex_review = lambda current_step, *, reviewer: ap.ReviewResult(True, [], "ok")
 
     review = runner._run_review_gate({"step": 1, "name": "api-layer"})
 
