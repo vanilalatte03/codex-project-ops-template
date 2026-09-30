@@ -2,6 +2,8 @@ import json
 import os
 import subprocess
 import sys
+import threading
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -157,6 +159,81 @@ def test_run_step_uses_task_worktree_as_cwd(runner, tmp_repo):
     assert seen["cwd"] == worktree_path
     assert seen["cmd"][0] == sys.executable
     assert seen["cmd"][1] == str(worktree_path / "scripts" / "execute.py")
+
+
+def test_v2_implementations_overlap_but_state_updates_are_serial(runner, tmp_repo):
+    tasks = [
+        {"id": task_id, "step": index, "name": task_id, "objective": task_id, "status": "pending"}
+        for index, task_id in enumerate(("a", "b"))
+    ]
+    barrier = threading.Barrier(2, timeout=3)
+    worker_threads = set()
+    state_threads = set()
+
+    def fake_worktree(step):
+        path = tmp_repo / step["id"]
+        path.mkdir(exist_ok=True)
+        return SimpleNamespace(path=path, state=SimpleNamespace(task_id=step["id"], status="created"))
+
+    def transition(handle, status, **kwargs):
+        state_threads.add(threading.get_ident())
+        handle.state.status = status
+        return handle
+
+    def implement(branch, step, path):
+        worker_threads.add(threading.get_ident())
+        barrier.wait()
+
+    runner._task_worktree = fake_worktree
+    runner._lifecycle.transition = transition
+    runner._run_step = implement
+    runner._worktree_head = lambda path: "a" * 40
+    main_thread = threading.get_ident()
+
+    prepared = runner._preimplement_batch(tasks)
+
+    assert set(prepared) == {"a", "b"}
+    assert all(state.status == "implemented" for _, state in prepared.values())
+    assert len(worker_threads) == 2
+    assert state_threads == {main_thread}
+
+
+def test_parallel_branch_reconcile_preserves_prior_merge_and_current_task(runner, tmp_repo):
+    runner._base_sha = "b" * 40
+    runner._active_run = None
+    relative = "phases/0-mvp/index.json"
+    path = tmp_repo / "prepared"
+    (path / "phases" / "0-mvp").mkdir(parents=True)
+    handle = SimpleNamespace(path=path, state=SimpleNamespace(base_sha="a" * 40))
+    tasks = [
+        {"id": "a", "objective": "a", "status": "pending"},
+        {"id": "b", "objective": "b", "status": "pending"},
+    ]
+    ours = {"schemaVersion": 2, "project": "Demo", "phase": "0-mvp", "tasks": [tasks[0], {**tasks[1], "status": "completed", "summary": "b done"}]}
+    theirs = {"schemaVersion": 2, "project": "Demo", "phase": "0-mvp", "tasks": [{**tasks[0], "status": "completed", "summary": "a done"}, tasks[1]]}
+    calls = []
+
+    def fake_git(cwd, *args, check=True):
+        calls.append(args)
+        if args[:2] == ("merge-base", "--is-ancestor"):
+            return cp(returncode=1)
+        if args[0] == "merge":
+            return cp(returncode=1)
+        if args[:2] == ("diff", "--name-only"):
+            return cp(stdout=relative + "\n")
+        if args[:2] == ("show", f":2:{relative}"):
+            return cp(stdout=json.dumps(ours))
+        if args[:2] == ("show", f":3:{relative}"):
+            return cp(stdout=json.dumps(theirs))
+        return cp()
+
+    runner._git_at = fake_git
+    runner._reconcile_prepared_branch({"id": "b", "step": 1, "name": "b"}, handle)
+
+    merged = json.loads((path / relative).read_text(encoding="utf-8"))
+    assert [task["status"] for task in merged["tasks"]] == ["completed", "completed"]
+    assert [task["summary"] for task in merged["tasks"]] == ["a done", "b done"]
+    assert any(call[0] == "push" for call in calls)
 
 
 def test_run_state_reconciles_same_task_after_interruption(runner, tmp_repo):

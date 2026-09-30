@@ -173,6 +173,23 @@ class TestJsonHelpers:
 
 
 class TestTaskSchemaIntegration:
+    def test_v2_executor_selects_ready_task_and_rejects_unmet_dependency(self, tmp_project):
+        phase = tmp_project / "phases" / "0-dag"
+        phase.mkdir()
+        (phase / "index.json").write_text(json.dumps({
+            "schemaVersion": 2, "project": "Demo", "phase": "0-dag",
+            "tasks": [
+                {"id": "dependent", "objective": "dependent", "dependsOn": ["root"], "status": "pending"},
+                {"id": "root", "objective": "root", "status": "pending"},
+            ],
+        }), encoding="utf-8")
+        with patch.object(ex, "ROOT", tmp_project):
+            next_executor = ex.StepExecutor("0-dag", next_step_only=True)
+            direct_executor = ex.StepExecutor("0-dag", step_number=0)
+        assert next_executor._select_single_step()["id"] == "root"
+        with pytest.raises(SystemExit):
+            direct_executor._select_single_step()
+
     def test_executor_accepts_v2_and_keeps_serial_list_order(self, tmp_project):
         phase = tmp_project / "phases" / "0-v2"
         phase.mkdir()

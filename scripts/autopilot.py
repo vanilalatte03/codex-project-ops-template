@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
@@ -17,6 +18,7 @@ from pathlib import Path
 
 import guard
 import run_state
+import dag
 import task_schema
 import worktree
 from codex_common import (
@@ -46,7 +48,6 @@ NO_CHECKS_GRACE_SECONDS = 60
 NO_CHECKS_POLL_SECONDS = 15
 SCOPE_RULES_FILENAME = "scope-rules.json"
 LOCK_RELATIVE_PATH = Path(".codex") / "autopilot.lock"
-MAX_CONCURRENT_TASKS = 1
 REVIEW_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -188,8 +189,12 @@ class AutopilotRunner:
         skip_base_checks: bool = False,
         root: Path = ROOT,
         worktree_root: Path | None = None,
+        concurrency: int = dag.DEFAULT_CONCURRENCY,
     ):
         self.phase = phase
+        if isinstance(concurrency, bool) or not 1 <= concurrency <= dag.MAX_CONCURRENCY:
+            raise ValueError(f"concurrency must be between 1 and {dag.MAX_CONCURRENCY}")
+        self.concurrency = concurrency
         self.base = base
         self.max_review_fixes = max_review_fixes
         self.unsafe = unsafe
@@ -322,6 +327,7 @@ class AutopilotRunner:
     def _run_loop(self) -> str:
         self._ensure_preconditions()
         merged_prs: list[str] = []
+        prefetched: dict[str, tuple[worktree.WorktreeHandle, run_state.RunState]] = {}
 
         while True:
             if self.max_steps is not None and len(merged_prs) >= self.max_steps:
@@ -331,13 +337,30 @@ class AutopilotRunner:
                 )
 
             step = self._next_pending_step()
+            index = self._load_base_phase_index() if step is not None and "id" in step else None
+            if index is not None and index.schema_version == 2 and not prefetched:
+                remaining = (self.max_steps - len(merged_prs)) if self.max_steps is not None else self.concurrency
+                batch = dag.select_batch(index, min(self.concurrency, remaining))
+                if batch:
+                    prefetched = self._preimplement_batch(batch)
+            if prefetched and index is not None:
+                step = next((task for task in index.tasks if task.get("id") in prefetched), None)
             if step is None:
+                if self._phase_index_path().exists():
+                    index = self._load_base_phase_index()
+                if index is not None and any(s["status"] == "pending" for s in index.tasks):
+                    raise AutopilotError("pending task의 dependency가 완료되지 않았습니다. 실패·중단 task를 복구한 뒤 재개하세요.")
                 self._run_final_gate()
                 return "\n".join(merged_prs) if merged_prs else f"No pending steps for {self.phase}."
 
             branch = self._step_branch(step)
             handle: worktree.WorktreeHandle | None = None
-            if self._uses_isolated_worktrees():
+            prepared = prefetched.pop(str(step.get("id")), None) if index is not None and index.schema_version == 2 else None
+            if prepared is not None:
+                handle, self._active_run = prepared
+                self._active_handle = handle
+                self._active_worktree = handle.path
+            elif self._uses_isolated_worktrees():
                 handle = self._task_worktree(step)
                 if handle.state.status in worktree.PRESERVED_STATUSES:
                     self._active_handle = self._lifecycle.resume(handle.state.task_id)
@@ -347,7 +370,8 @@ class AutopilotRunner:
                 handle = self._active_handle
 
             try:
-                self._active_run = self._activate_run_state(step, handle)
+                if prepared is None:
+                    self._active_run = self._activate_run_state(step, handle)
                 # execute.py is invoked from the task worktree. In a test-only
                 # fake root without Git, the legacy two-argument call remains
                 # useful for exercising PR/review orchestration in isolation.
@@ -365,6 +389,9 @@ class AutopilotRunner:
                         head_sha=self._worktree_head(handle.path),
                     )
                     self._active_handle = handle
+
+                if prepared is not None:
+                    self._reconcile_prepared_branch(step, handle)
 
                 pr_url = self._active_run.completed_actions.get("pr-created")
                 if pr_url is None:
@@ -431,6 +458,44 @@ class AutopilotRunner:
                 self._active_run = None
 
             self._sync_base()
+
+    def _preimplement_batch(self, batch: list[dict]) -> dict[str, tuple[worktree.WorktreeHandle, run_state.RunState]]:
+        """Run only implementation subprocesses concurrently; persist state on this thread."""
+        prepared: dict[str, tuple[worktree.WorktreeHandle, run_state.RunState]] = {}
+        for step in batch:
+            handle = self._task_worktree(step)
+            if handle.state.status in worktree.PRESERVED_STATUSES:
+                handle = self._lifecycle.resume(handle.state.task_id)
+            elif handle.state.status == "created":
+                handle = self._lifecycle.transition(handle, "running")
+            state = self._activate_run_state(step, handle)
+            prepared[str(step["id"])] = (handle, state)
+
+        failures: list[str] = []
+        with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
+            futures = {
+                str(step["id"]): pool.submit(self._run_step, self._step_branch(step), step, prepared[str(step["id"])][0].path)
+                for step in batch if prepared[str(step["id"])][1].status == "running"
+            }
+            for step in batch:
+                task_id = str(step["id"])
+                handle, state = prepared[task_id]
+                future = futures.get(task_id)
+                if future is None:
+                    continue
+                try:
+                    future.result()
+                    state = self._run_states.transition(task_id, "implemented", verification_status="passed")
+                    handle = self._lifecycle.transition(handle, "implemented", head_sha=self._worktree_head(handle.path))
+                except Exception as exc:
+                    status = "blocked" if getattr(exc, "blocked", False) else "error"
+                    state = self._run_states.transition(task_id, status, error=str(exc))
+                    self._preserve_worktree_failure(handle, status, str(exc))
+                    failures.append(f"{task_id}: {exc}")
+                prepared[task_id] = (handle, state)
+        if failures:
+            raise AutopilotError("병렬 구현 실패; 성공한 task의 worktree와 state를 보존했습니다: " + " | ".join(failures))
+        return prepared
 
     def _uses_isolated_worktrees(self) -> bool:
         """실제 Git 실행에서만 isolation을 활성화한다.
@@ -662,9 +727,8 @@ class AutopilotRunner:
                 + status
             )
 
-        # Validate the whole phase index before authentication, branch sync or
-        # any step can reach execute.py/Codex. This is intentionally a shape
-        # and reference check only; task selection remains list-order serial.
+        # Validate the whole phase index, including DAG cycles, before
+        # authentication, branch sync or any task can reach Codex.
         self._load_phase_index()
         self._gh("auth", "status")
         self._git("remote", "get-url", "origin")
@@ -749,7 +813,49 @@ class AutopilotRunner:
 
     def _next_pending_step(self) -> dict | None:
         index = self._load_base_phase_index()
+        if index.schema_version == 2:
+            ready = dag.ready_tasks(index)
+            return ready[0] if ready else None
         return next((s for s in index.get("steps", []) if s.get("status") == "pending"), None)
+
+    def _reconcile_prepared_branch(self, step: dict, handle: worktree.WorktreeHandle) -> None:
+        """Carry prior serial merges into a prefetched branch before its PR."""
+        if self._active_run and "pr-created" in self._active_run.completed_actions:
+            return
+        target = self._base_sha
+        if not target or target == handle.state.base_sha:
+            return
+        path = handle.path
+        self._git_at(path, "fetch", "origin", self.base)
+        ancestor = self._git_at(path, "merge-base", "--is-ancestor", target, "HEAD", check=False)
+        if ancestor.returncode == 0:
+            return
+        merged = self._git_at(path, "merge", "--no-ff", "--no-commit", target, check=False)
+        relative = f"phases/{self.phase}/index.json"
+        if merged.returncode != 0:
+            conflicts = self._git_at(path, "diff", "--name-only", "--diff-filter=U").stdout.splitlines()
+            if conflicts != [relative]:
+                raise AutopilotError(
+                    f"base 동기화 충돌을 자동으로 해결할 수 없습니다 ({step['id']}): {conflicts}. worktree를 보존합니다."
+                )
+            ours = json.loads(self._git_at(path, "show", f":2:{relative}").stdout)
+            theirs = json.loads(self._git_at(path, "show", f":3:{relative}").stdout)
+            own_index = task_schema.normalize_phase_index(ours, path=relative)
+            base_index = task_schema.normalize_phase_index(theirs, path=relative)
+            own = next(t for t in own_index.tasks if t["id"] == step["id"])
+            target_task = next(t for t in base_index.tasks if t["id"] == step["id"])
+            if target_task["status"] != "pending" or own["status"] != "completed":
+                raise AutopilotError(f"{step['id']}의 병합 상태가 예상과 다릅니다. worktree를 보존합니다.")
+            for key in task_schema.LIFECYCLE_FIELDS | {"status"}:
+                if key in own:
+                    target_task[key] = own[key]
+            (path / relative).write_text(
+                json.dumps(base_index.to_payload(), ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            self._git_at(path, "add", "--", relative)
+        self._git_at(path, "commit", "-m", "chore: 병렬 task 병합 상태 정합화")
+        self._git_at(path, "push", "origin", self._step_branch(step))
 
     def _load_base_phase_index(self) -> task_schema.NormalizedPhaseIndex:
         """primary checkout을 branch switch하지 않고 fetch한 base에서 읽는다."""
@@ -1388,8 +1494,7 @@ class AutopilotRunner:
         task_metadata = ""
         if step.get("id"):
             task_metadata = (
-                f" Task id is `{step['id']}`; treat `dependsOn`, `issue`, and `risk` as metadata only."
-                " Do not change serial/list-order execution in this step."
+                f" Task id is `{step['id']}`; follow its declared `dependsOn` and `resources` constraints."
             )
         phase_readme = f"phases/{self.phase}/README.md"
         step_file = f"phases/{self.phase}/step{step_num}.md"
@@ -1683,6 +1788,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Print pending step/branch plan without side effects")
     parser.add_argument("--max-steps", type=int, help="Maximum step PRs to merge in this run")
     parser.add_argument(
+        "--concurrency", type=int, default=dag.DEFAULT_CONCURRENCY,
+        help=f"Maximum concurrent v2 implementations (default {dag.DEFAULT_CONCURRENCY}, cap {dag.MAX_CONCURRENCY}); v1 remains serial",
+    )
+    parser.add_argument(
         "--allow-no-checks",
         action="store_true",
         help="Do not wait through the no-checks grace period for repositories without CI checks",
@@ -1729,6 +1838,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"{option}: {exc}")
     if args.max_steps is not None and args.max_steps < 1:
         parser.error("--max-steps must be greater than 0")
+    if not 1 <= args.concurrency <= dag.MAX_CONCURRENCY:
+        parser.error(f"--concurrency must be between 1 and {dag.MAX_CONCURRENCY}")
 
     base = args.base or detect_default_base()
     try:
@@ -1746,6 +1857,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_no_checks=args.allow_no_checks,
             skip_base_checks=args.skip_base_checks,
             worktree_root=args.worktree_root,
+            concurrency=args.concurrency,
         ).run()
     except AutopilotError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

@@ -63,7 +63,13 @@
       "status": "completed",
       "summary": "Native CLI review를 우선 사용하고 실패 시 기존 JSON read-only review로 fallback하며, high·critical task에만 high-risk specialist를 추가해 worktree 불변과 기존 gate를 유지했다."
     },
-    { "step": 9, "name": "bounded-dag", "status": "pending" },
+    {
+      "step": 9,
+      "name": "bounded-dag",
+      "issue": 22,
+      "status": "completed",
+      "summary": "v2 DAG cycle과 ready set을 검증하고 기본 2개·최대 4개 구현만 병렬화하며 자원 충돌 회피, 직렬 PR 병합, index 정합화와 재개 경로를 추가했다."
+    },
     { "step": 10, "name": "release-eval", "status": "pending" }
   ]
 }

@@ -1,8 +1,8 @@
 # Phase task schema
 
 이 문서는 `phases/{phase}/index.json`의 task 계약과 v1/v2 호환 규칙의
-source of truth다. 현재 실행기는 모든 입력을 검증한 뒤 배열 순서대로 한 번에
-하나의 task를 처리한다.
+source of truth다. v1은 배열 순서로 직렬 실행하고 v2는 검증된 DAG의 ready task를
+선택한다.
 
 ## 형식 판별
 
@@ -54,6 +54,7 @@ v2 task는 다음 필드를 사용한다.
 | `objective` | 필수 | 비어 있지 않은 결과 목표 문자열 |
 | `status` | 필수 | `pending`, `completed`, `error`, `blocked` 중 하나 |
 | `dependsOn` | 선택 | task `id` 문자열의 배열. 생략하면 검증된 메모리 view에서 `[]`로 본다 |
+| `resources` | 선택 | 동시에 사용할 수 없는 공유 자원 이름의 배열. 생략하면 `[]`로 본다 |
 | `issue` | 선택 | 양의 정수인 GitHub Issue 번호 |
 | `risk` | 선택 | 비어 있지 않은 위험도 문자열 |
 
@@ -72,10 +73,14 @@ v2 task는 다음 필드를 사용한다.
 
 - v1 task는 기존 `step`/`name`을 그대로 사용한다.
 - v2 task는 배열 위치를 `step`, `id`를 `name`으로 임시 노출한다.
-- 이 alias는 현재 직렬 executor가 기존 companion `stepN.md`와 list-order를
-  사용할 수 있게 하는 메모리 값이며 v2 JSON에 저장하지 않는다.
-- `dependsOn`은 중복·self·존재하지 않는 task id를 거부하는 참조 검증만 한다.
-  ready set, cycle 처리, DAG 스케줄링, 병렬 실행은 후속 #22 범위다.
+- 이 alias는 기존 companion `stepN.md`를 찾기 위한 메모리 값이며 v2 JSON에 저장하지 않는다.
+- `dependsOn`은 중복·self·존재하지 않는 task id와 cycle을 실행 전에 거부한다.
+  `completed`인 선행 task만 충족된 것으로 보고, `pending` task 중 ready set을 고른다.
+- v2 autopilot은 기본 2개, 최대 4개의 독립 task 구현만 병렬 실행한다.
+  같은 `resources`를 선언한 task는 한 배치에서 함께 실행하지 않는다.
+  PR 생성·리뷰·merge·state 전이는 직렬로 처리하며, 선행 PR 병합 뒤 다음 branch의
+  index 상태를 정합화한다. 다른 파일 충돌은 worktree를 보존하고 중단한다.
+- v1은 기존 배열 순서와 직렬 실행을 유지한다. 공유 자원은 task 작성자가 명시해야 한다.
 
 읽기와 쓰기 사이에 형식을 바꾸지 않는다. 정규화 객체의 `to_payload()`는 원래
 `steps[]` 또는 `tasks[]` 컨테이너와 필드 생략을 보존하며, v1 입력에 synthetic v2
@@ -87,7 +92,7 @@ v2 task는 다음 필드를 사용한다.
 
 - 중복 `id`
 - `dependsOn`의 누락된 task id
-- 자기 자신을 가리키는 dependency
+- 자기 자신을 가리키는 dependency 또는 cycle
 - 필수 필드 누락, 잘못된 타입, 공통 상태 밖의 `status`
 
 `TaskSchemaError`는 파일 경로와 필드 경로를 함께 출력한다. 예를 들어
@@ -107,5 +112,4 @@ v2 task는 다음 필드를 사용한다.
 3. 생성한 v2 index를 validator, companion step 문서, 전체 테스트로 확인한다.
 4. 사용자가 승인한 뒤에만 별도 commit으로 적용하고, 실패 시 원본을 복구한다.
 
-이번 schema 단계는 migration 명령이나 DAG scheduler를 추가하지 않는다. 원본을
-보존한 채 읽기 호환성과 검증만 제공한다.
+자동 migration 명령은 제공하지 않는다. 원본을 보존한 채 읽기 호환성을 유지한다.

@@ -25,6 +25,10 @@ stage에서 `test`와 `build`는 필수 gate입니다. 둘 중 하나라도 비�
 | phase-step | `python scripts/execute.py <phase-name> --next-step-only` | no | 다음 pending step만 실행 |
 | autopilot | `python scripts/autopilot.py <phase-name> --max-review-fixes 2` | no | phase 전체 구현 시 권장. step별 PR 생성, 자체 리뷰, 이슈 기록, 자동 병합 루프 |
 
+v2 task DAG는 autopilot에서 기본 동시성 2를 사용한다. 구현 동시성은
+`--concurrency 1..4`로 제한하며 v1 phase는 항상 직렬 실행한다. 공유 자원은
+v2 task의 `resources`에 명시한다. PR merge와 state 갱신은 직렬이다.
+
 ## Phase index schema 검증
 
 `phases/{phase}/index.json`은 [`TASK_SCHEMA.md`](TASK_SCHEMA.md)의 v1 `steps[]`와
