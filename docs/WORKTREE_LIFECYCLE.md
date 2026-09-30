@@ -10,7 +10,8 @@
 - **primary checkout**: autopilot을 시작한 checkout이다. 현재 branch, 파일,
   index와 사용자의 변경을 보존하며 branch switch, commit, stage를 하지 않는다.
 - **task worktree**: 한 task의 구현·인수 검증·read-only review·PR 준비가 일어나는
-  독립 checkout이다. autopilot은 동시성 1로 하나만 활성화한다.
+  독립 checkout이다. v1은 하나씩, v2는 독립 task를 기본 2개·최대 4개까지
+  활성화하며 공유 `resources`가 겹치면 같은 배치에 넣지 않는다.
 - 기본 task worktree root는 primary checkout의 부모 아래
   `.codex-worktrees/<repository-name>/`이다. `--worktree-root`로 다른 절대 경로를
   지정할 수 있지만 primary checkout 안쪽 경로는 사용하지 않는다.
@@ -60,7 +61,7 @@ created -> running -> implemented -> reviewing -> ready -> merged -> cleanup
 - `merged`는 PR merge 성공만 의미한다. `completed`라는 Codex 보고만으로는
   정리할 수 없다.
 - 상태 갱신·base sync·PR merge는 autopilot의 repository lock 안에서 한 번에
-  하나씩 수행한다. `dependsOn`은 이 단계에서 scheduler로 해석하지 않는다.
+  하나씩 수행한다. v2 `dependsOn`은 완료된 선행 task의 ready set을 결정한다.
 
 ## 소유권과 재개 판정
 

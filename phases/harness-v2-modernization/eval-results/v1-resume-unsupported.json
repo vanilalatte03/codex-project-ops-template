@@ -1,0 +1,27 @@
+{
+  "variant": "v1",
+  "scenario": "EVAL-RESUME",
+  "repetition": 1,
+  "baseCommit": "a945f5bc9a64c40e97dcee18de91c4f59b39c7cb",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "codex": null,
+    "model": "not invoked",
+    "effort": "not invoked",
+    "sandbox": "local isolated checkout"
+  },
+  "setupIncluded": false,
+  "implementationRetryCount": 0,
+  "reviewFixCount": 0,
+  "humanInterventionCount": 0,
+  "tokens": null,
+  "unavailableReason": "No Codex call in this deterministic contract replay",
+  "success": false,
+  "firstPass": false,
+  "evidence": [],
+  "scope": "contract replay only; task PR review and per-sample CI are not included",
+  "status": "unsupported",
+  "fixtureSha256": null,
+  "wallTimeSeconds": null
+}

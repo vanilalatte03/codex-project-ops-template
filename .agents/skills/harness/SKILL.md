@@ -138,12 +138,13 @@ v1은 `steps[].step`, `steps[].name`, `steps[].status`를 사용하고, v2는
 `id`·`objective`·`status`를 필수로 하며 `dependsOn`·`issue`·`risk`를 선택으로
 둔다. 두 형식의 status는 `pending`, `completed`, `error`, `blocked`로 같다.
 `scripts/task_schema.py`가 형식을 구분하고 필수 필드, 타입, 중복 id, self/unknown
-dependency를 path/reason과 함께 Codex 호출 전에 검증한다. v2의 `dependsOn`은 이
-단계에서 reference metadata이며 list order를 바꾸지 않는다. ready set, cycle,
-DAG scheduler와 parallelism은 후속 #22 범위다.
+dependency와 cycle을 path/reason과 함께 Codex 호출 전에 검증한다. v2의
+`dependsOn`은 완료된 선행 task의 ready set을 결정한다. autopilot은 독립
+task 구현을 기본 2개, 최대 4개까지 병렬 실행하고 공유 `resources`가 겹치면
+같은 배치에 넣지 않는다. PR 병합과 상태 갱신은 직렬이다.
 
 validator가 v2 task에 노출하는 배열 위치 `step`과 id 기반 `name`은 현재
-serial executor와 `stepN.md`를 연결하기 위한 메모리 alias다. 파일을 저장할 때
+`stepN.md`를 연결하기 위한 메모리 alias다. 파일을 저장할 때
 `tasks[]` 원형을 유지하며 v1에 v2 필드를 추가하지 않는다. v1→v2 변환은 원본
 백업, dry-run, 검증과 사용자 승인을 포함한 별도 opt-in 작업으로만 수행한다.
 
@@ -321,9 +322,10 @@ Git administrative directory의 `harness-worktree.json` marker에
 상태·진단을 atomic하게 기록한다. marker 없는 path/branch, owner 불일치, stale
 administrative entry는 소유권을 추측하지 않고 보존한다.
 
-primary checkout은 branch switch/commit/stage 대상이 아니다. base sync와 PR merge는
-`.codex/autopilot.lock` 아래 동시성 1로 직렬화하고, v1 `steps[]`·v2 `tasks[]`는
-기존 list-order를 그대로 따른다. `error`, `blocked`, `interrupted` task는 marker와
-checkout을 남겨 같은 task를 resume하며, `merged`·clean·expected HEAD·active entry·
-Harness owner를 모두 확인한 경우에만 force 없는 safe cleanup을 수행한다. DAG,
-ready-set, parallelism과 사용자 worktree/branch 자동 삭제·prune은 이 단계에 넣지 않는다.
+primary checkout은 branch switch/commit/stage 대상이 아니다. base sync와 PR merge,
+상태 갱신은 `.codex/autopilot.lock` 아래 직렬화한다. v1 `steps[]`는 기존 list-order로
+실행하고 v2 `tasks[]`는 ready set을 bounded batch로 구현한다. `error`, `blocked`,
+`interrupted` task는 marker와 checkout을 남겨 같은 task를 resume하며,
+`merged`·clean·expected HEAD·active entry·Harness owner를 모두 확인한 경우에만
+force 없는 safe cleanup을 수행한다. 사용자 worktree/branch 자동 삭제·prune은
+하지 않는다.

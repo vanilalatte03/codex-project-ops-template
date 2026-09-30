@@ -93,9 +93,8 @@ Harness skill을 사용해서 확정된 문서를 기준으로 phase를 설계�
 MVP를 phases/{phase}/README.md, index.json, stepN.md로 나누되, 각 step은
 하나의 레이어 또는 모듈만 다루게 작게 쪼개줘.
 기존 phase는 v1 `steps[]`를 그대로 유지하고, 새 outcome task가 필요할 때만
-`docs/TASK_SCHEMA.md`의 v2 `tasks[]`를 사용해줘. v2의 `dependsOn`은 현재
-직렬 list-order를 바꾸는 scheduler가 아니라 검증할 reference metadata로만
-기록해줘.
+`docs/TASK_SCHEMA.md`의 v2 `tasks[]`를 사용해줘. v2 task의 선행 조건은
+`dependsOn`, 겹치면 안 되는 공유 자원은 `resources`에 명시해줘.
 각 step에는 읽어야 할 파일, 작업, 인수 기준, 검증 절차, 금지사항을 포함하고,
 docs/COMMANDS.md의 test/build 명령을 완료 기준에 반영해줘.
 아직 phase를 실행하거나 코드를 구현하지 말고, 먼저 phase/step 설계안을 제시해줘.

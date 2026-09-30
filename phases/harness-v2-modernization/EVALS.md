@@ -1,5 +1,8 @@
 # Harness v2 eval 계약
 
+Step 10의 현재 검증 증거와 남은 gate는 [RELEASE_EVAL_STATUS.md](RELEASE_EVAL_STATUS.md)에
+기록한다. 그 문서의 미측정 항목은 이 계약의 결과로 간주하지 않는다.
+
 ## 목적
 
 동일한 대표 작업을 고정된 조건에서 v1과 v2로 실행해 correctness와 safety를 먼저

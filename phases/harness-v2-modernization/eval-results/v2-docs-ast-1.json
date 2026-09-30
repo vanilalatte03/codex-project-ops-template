@@ -1,0 +1,52 @@
+{
+  "variant": "v2",
+  "scenario": "EVAL-DOCS",
+  "repetition": 1,
+  "baseCommit": "bcfadc383f0b1a599bca7a34b0eba73482d8cc41",
+  "fixtureSha256": "9d48d0b2b2499a854ec90da950a699ff23a31eca45bb602c582fac8be9037bd0",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "codex": "codex-cli 0.146.0",
+    "model": "gpt-5.6-luna",
+    "effort": "low",
+    "sandbox": "workspace-write",
+    "approvalPolicy": "never (CLI noninteractive)"
+  },
+  "setupIncluded": false,
+  "cacheState": "existing local CLI cache",
+  "retryLimit": 3,
+  "success": false,
+  "firstPass": false,
+  "implementationRetryCount": 1,
+  "reviewFixCount": 0,
+  "wallTimeSeconds": 94.344,
+  "humanInterventionCount": 0,
+  "tokens": null,
+  "unavailableReason": "Harness runner commit-safe output does not expose usage",
+  "evidence": [
+    "local fixture commit f9eb9b43db4f79b0ad7b39d69fa8218e646ec4f8",
+    "run output SHA-256 471884b548a42632d3d79ebd75d5d675b665b9d27b730f11098f407c1ac2b61c"
+  ],
+  "scope": "local task and acceptance only; PR review and CI not run per sample",
+  "exitCode": 0,
+  "runOutputSha256": "471884b548a42632d3d79ebd75d5d675b665b9d27b730f11098f407c1ac2b61c",
+  "terminalStatus": "completed",
+  "runner": {
+    "ok": true,
+    "adapter": "exec",
+    "exitCode": 0,
+    "errorKind": null,
+    "fallbackReason": null
+  },
+  "changedPaths": [
+    "docs/STATUS.md",
+    "phases/index.json",
+    "phases/release-eval-fixture/index.json"
+  ],
+  "scopePass": true,
+  "acceptancePass": true,
+  "expectedResultPass": true,
+  "localSuccess": true,
+  "status": "pending-pr-gates"
+}

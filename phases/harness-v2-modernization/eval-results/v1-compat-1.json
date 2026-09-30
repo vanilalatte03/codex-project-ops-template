@@ -1,0 +1,34 @@
+{
+  "variant": "v1",
+  "scenario": "EVAL-V1",
+  "repetition": 1,
+  "baseCommit": "a945f5bc9a64c40e97dcee18de91c4f59b39c7cb",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "codex": null,
+    "model": "not invoked",
+    "effort": "not invoked",
+    "sandbox": "local isolated checkout"
+  },
+  "setupIncluded": false,
+  "implementationRetryCount": 0,
+  "reviewFixCount": 0,
+  "humanInterventionCount": 0,
+  "tokens": null,
+  "unavailableReason": "No Codex call in this deterministic contract replay",
+  "success": false,
+  "firstPass": false,
+  "evidence": [
+    "output SHA-256 16671c70c563a06cc30386020076ef46af15b7b265d42c317a2fa4d5cd55892a"
+  ],
+  "scope": "contract replay only; task PR review and per-sample CI are not included",
+  "fixtureSha256": "9600a1a1d3cdae7c44896efe74972b955c0f418cc6a0690123956fec48c8637e",
+  "contractPass": false,
+  "observed": {},
+  "wallTimeSeconds": 0.157,
+  "exitCode": 1,
+  "outputSha256": "16671c70c563a06cc30386020076ef46af15b7b265d42c317a2fa4d5cd55892a",
+  "errorSummary": "Traceback (most recent call last):\n  File \"<string>\", line 4, in <module>\nModuleNotFoundError: No module named 'execute'\n",
+  "status": "contract-fail"
+}

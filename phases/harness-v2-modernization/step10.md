@@ -31,10 +31,15 @@
 ```powershell
 python -m pytest scripts
 python scripts/doctor.py --template
-python scripts/upgrade.py --from . --dry-run
+python -m pytest scripts/tests/test_upgrade.py
 python scripts/checks.py --docs-check-config phases/harness-v2-modernization/docs-checks.json --docs-check
 git diff --check
 ```
+
+`upgrade.py --from . --dry-run`은 같은 체크아웃을 source와 instance로 지정해
+스크립트가 의도적으로 거부한다. 따라서 위 자동 테스트에 더해 별도 인스턴스
+체크아웃에서 새 템플릿 체크아웃을 `--from <template-checkout> --dry-run`으로
+지정해 실제 명령을 검증하고, 두 경로·버전·종료 코드를 결과에 기록한다.
 
 ## 검증 절차
 

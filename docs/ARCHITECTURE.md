@@ -3,8 +3,8 @@
 ## 시스템 개요
 
 - Runtime/Framework: Python CLI Harness
-- 주요 책임: phase task를 검증하고 Codex 구현·검증·review·PR 흐름을 안전하게
-  직렬 오케스트레이션한다.
+- 주요 책임: phase task를 검증하고 v2 독립 task 구현은 상한 내 병렬 실행하며
+  review·PR 병합·상태 갱신은 직렬로 조정한다.
 - 외부 의존성: Git, GitHub CLI, Codex CLI, 로컬 파일 시스템
 
 ## 디렉터리 구조
@@ -14,9 +14,10 @@ scripts/
   codex_runner.py  # exec 기본/SDK opt-in, native review와 legacy read-only fallback 경계
   run_state.py     # Git 관리 영역의 원자적 local run state와 재개·redaction 계약
   execute.py       # 한 task의 구현과 acceptance 재검증
-  autopilot.py     # task별 PR, review, merge 직렬 루프
+  autopilot.py     # v2 ready task 병렬 구현과 직렬 PR, review, merge
   worktree.py      # task worktree와 administrative marker lifecycle
   task_schema.py   # v1/v2 phase index validator와 memory view
+  dag.py           # v2 ready set과 공유 자원별 bounded batch
   doctor.py        # template/instance readiness 검사
 docs/
   WORKTREE_LIFECYCLE.md
@@ -27,8 +28,10 @@ phases/{phase}/
 
 ## 모듈 경계
 
-- `task_schema.py`: v1 `steps[]`와 v2 `tasks[]`를 검증하고 list-order 공통 memory
-  view를 제공한다. DAG scheduler나 migration은 담당하지 않는다.
+- `task_schema.py`: v1 `steps[]`와 v2 `tasks[]`를 검증하고 공통 memory
+  view를 제공한다. v2 cycle을 검증하며 migration은 담당하지 않는다.
+- `dag.py`: 완료된 선행 task의 ready set과 공유 자원을 고려한 bounded batch를
+  선택한다.
 - `worktree.py`: Git worktree add/list/resume/remove와 Harness 소유권 marker,
   base SHA, 정리 gate를 담당한다. primary 파일과 사용자 branch를 수정하지 않는다.
 - `run_state.py`: run/task/issue/worktree/branch/model/effort/attempt와 검증·리뷰
@@ -36,8 +39,9 @@ phases/{phase}/
   runner thread 식별자는 local resume에만 보관하고 commit-safe record에서는 제외한다.
 - `execute.py`: 이미 선택된 task worktree에서 Codex 구현, acceptance 재검증,
   phase 상태 기록을 수행한다.
-- `autopilot.py`: primary의 repository lock 안에서 base fetch, worktree 준비,
-  execute subprocess, PR/review/merge, 성공 정리를 한 번에 하나씩 조정한다.
+- `autopilot.py`: primary의 repository lock 아래 base fetch, worktree 준비와
+  PR/review/merge·상태 갱신을 직렬 조정한다. v2 독립 task의 execute subprocess는
+  기본 2개, 최대 4개까지 실행하며 공유 자원이 겹치면 같은 배치에 넣지 않는다.
 - `codex_runner.py`: `start`, `run`, `resume`, `review`, `interrupt` 공통 contract와
   비민감 정규화 결과를 제공한다. production 기본은 `codex exec`이며 Python SDK는
   명시 opt-in이다. SDK pin/capability/실행 오류는 기존 sandbox·approval·환경 정책을
@@ -87,6 +91,6 @@ phase index
 - 단위 테스트: marker round-trip/atomic update, ownership, Windows·긴 경로,
   stale/dirty/기존 branch/path와 execute/autopilot 호출 경계
 - 통합 테스트: 실제 임시 bare repository와 working repository에서 task 변경
-  격리, primary branch 불변, 직렬 v1/v2 실행, 성공/실패 정리
+  격리, primary branch 불변, 직렬 v1·bounded v2 실행, 성공/실패 정리
 - 수동 검증: `doctor.py --template`, 전체 `pytest scripts`, `compileall`,
   phase docs-check와 `git diff --check`

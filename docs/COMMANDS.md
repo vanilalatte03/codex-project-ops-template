@@ -34,7 +34,7 @@ v2 task의 `resources`에 명시한다. PR merge와 state 갱신은 직렬이다
 `phases/{phase}/index.json`은 [`TASK_SCHEMA.md`](TASK_SCHEMA.md)의 v1 `steps[]`와
 v2 `tasks[]` 계약을 따릅니다. `execute.py`와 `autopilot.py`는 공통 validator를
 통해 필수 필드, 공통 status, 중복 id와 dependency reference를 Codex 호출 전에
-확인합니다. v2의 `dependsOn`은 현재 직렬 list-order를 바꾸지 않습니다.
+확인합니다. v2의 `dependsOn`은 ready set과 실행 순서를 결정합니다.
 
 템플릿의 v1/v2 예시와 companion 문서는 다음으로 확인합니다.
 
@@ -46,7 +46,8 @@ python -m pytest scripts
 이 검증은 기존 `phases/0-example/index.json`을 v1 그대로 읽는지와
 `phases/0-example-v2/index.json`의 outcome 필드를 함께 확인합니다. 자동 migration은
 없으며, v1을 v2로 바꾸는 작업은 원본 백업과 사용자 승인 뒤 별도 opt-in으로
-수행해야 합니다. DAG ready-set, cycle 처리와 병렬 실행은 후속 #22 범위입니다.
+수행해야 합니다. v2는 cycle을 사전 검증하고 ready set을 기반으로 bounded batch를
+실행하며, v1은 기존 배열 순서로 실행합니다.
 
 ## Harness 운영 옵션
 
