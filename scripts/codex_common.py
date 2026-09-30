@@ -77,6 +77,16 @@ def codex_base_cmd(effort: str) -> list[str]:
     ]
 
 
+def codex_review_cmd(effort: str) -> list[str]:
+    """Return the native review command with the shared safe environment policy."""
+    return [
+        resolve_codex_bin(),
+        "review",
+        *codex_effort_config(effort),
+        *codex_environment_config(),
+    ]
+
+
 def read_acceptance_commands(step_md_path: Path) -> tuple[str, ...]:
     """Return shell commands from fenced blocks under `## 인수 기준`."""
     if not step_md_path.exists():

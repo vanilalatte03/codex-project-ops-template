@@ -15,7 +15,7 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
-from codex_common import CODEX_EXEC_TIMEOUT, codex_base_cmd
+from codex_common import CODEX_EXEC_TIMEOUT, codex_base_cmd, codex_review_cmd
 
 SDK_PACKAGE = "openai-codex"
 SDK_PIN = "0.147.0"
@@ -45,6 +45,8 @@ class RunnerRequest:
     unsafe: bool = False
     output_schema: str | None = None
     output_last_message: str | None = None
+    review_base: str | None = None
+    native_review: bool = True
 
 
 @dataclass(frozen=True)
@@ -155,6 +157,24 @@ class ExecRunner:
             return RunnerResult(False, self.name, completed.returncode, error_kind="exec_failed")
         return RunnerResult.success(self.name, final_message=message, thread_id=_thread_id(completed.stdout or ""))
 
+    def _native_review(self, request: RunnerRequest) -> RunnerResult:
+        """Run the CLI-native review command and normalize only its safe output."""
+        cmd = codex_review_cmd(request.effort)
+        if request.review_base:
+            cmd.extend(["--base", request.review_base])
+        cmd.append("-")
+        try:
+            completed = self._run_process(
+                cmd, input=request.prompt, capture_output=True, text=True, timeout=request.timeout
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RunnerExecutionError("native review timed out", recoverable=True) from exc
+        except OSError as exc:
+            raise RunnerExecutionError("native review could not start", recoverable=True) from exc
+        if completed.returncode:
+            raise RunnerExecutionError("native review failed", recoverable=True)
+        return RunnerResult.success("native-review", final_message=completed.stdout or "")
+
     def start(self, request: RunnerRequest) -> RunnerResult:
         return self._invoke(request)
 
@@ -167,7 +187,21 @@ class ExecRunner:
         return self._invoke(request, resume=session.thread_id)
 
     def review(self, session: RunnerSession | None, request: RunnerRequest) -> RunnerResult:
-        return self.run(session, request) if session else self.start(request)
+        if not request.native_review:
+            return self.run(session, request) if session else self.start(request)
+        try:
+            return self._native_review(request)
+        except RunnerError as exc:
+            fallback = self.run(session, request) if session else self.start(request)
+            return RunnerResult(
+                fallback.ok,
+                fallback.adapter,
+                fallback.exit_code,
+                fallback.final_message,
+                fallback.thread_id,
+                fallback.error_kind,
+                fallback_reason=str(exc),
+            )
 
     def interrupt(self, session: RunnerSession) -> RunnerResult:
         return RunnerResult(False, self.name, error_kind="interrupt_unsupported")
@@ -244,7 +278,8 @@ class SdkRunner:
         return self._run_thread(thread, request)
 
     def review(self, session: RunnerSession | None, request: RunnerRequest) -> RunnerResult:
-        # ADR-0005: native review remains out of scope; run the read-only turn.
+        if request.native_review:
+            raise RunnerCapabilityError("SDK native review is unavailable; use exec adapter fallback")
         return self.run(session, request) if session else self.start(request)
 
     def interrupt(self, session: RunnerSession) -> RunnerResult:

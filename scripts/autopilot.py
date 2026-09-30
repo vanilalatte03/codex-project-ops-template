@@ -34,6 +34,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STEP_EFFORT = "medium"
 DEFAULT_REVIEW_EFFORT = "high"
 DEFAULT_FIX_EFFORT = "medium"
+GENERAL_REVIEWER = "general"
+HIGH_RISK_REVIEWER = "high-risk-specialist"
+HIGH_RISK_LEVELS = frozenset({"high", "critical"})
 DEFAULT_GIT_TIMEOUT = 600
 DEFAULT_GH_TIMEOUT = 600
 PR_CHECKS_TIMEOUT = 3600
@@ -1041,12 +1044,19 @@ class AutopilotRunner:
         findings.extend(scope_findings)
         scope_passed = not scope_findings
 
-        codex_review = self._run_codex_review(step)
-        if not codex_review.passed:
-            findings.extend(codex_review.findings or [codex_review.summary or "Codex 자체 리뷰 실패"])
+        reviewers = self._reviewers_for(step)
+        codex_reviews = [
+            self._run_codex_review(step, reviewer=reviewer)
+            for reviewer in reviewers
+        ]
+        codex_passed = all(review.passed for review in codex_reviews)
+        for reviewer, codex_review in zip(reviewers, codex_reviews):
+            if not codex_review.passed:
+                reviewer_findings = codex_review.findings or [codex_review.summary or "Codex 자체 리뷰 실패"]
+                findings.extend(f"[{reviewer}] {finding}" for finding in reviewer_findings)
 
         findings = _dedupe(findings)
-        passed = checks_passed and diff_passed and scope_passed and codex_review.passed and not findings
+        passed = checks_passed and diff_passed and scope_passed and codex_passed and not findings
         return ReviewResult(
             passed,
             findings,
@@ -1054,9 +1064,16 @@ class AutopilotRunner:
             checks_passed=checks_passed,
             diff_passed=diff_passed,
             scope_passed=scope_passed,
-            codex_passed=codex_review.passed,
+            codex_passed=codex_passed,
             commands=commands,
         )
+
+    @staticmethod
+    def _reviewers_for(step: dict) -> tuple[str, ...]:
+        risk = str(step.get("risk", "")).strip().lower()
+        if risk in HIGH_RISK_LEVELS:
+            return (GENERAL_REVIEWER, HIGH_RISK_REVIEWER)
+        return (GENERAL_REVIEWER,)
 
     def _command_failure(self, cmd: list[str], result: subprocess.CompletedProcess) -> str:
         output = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
@@ -1272,8 +1289,8 @@ class AutopilotRunner:
         except AutopilotError as exc:
             raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout) from exc
 
-    def _run_codex_review(self, step: dict) -> ReviewResult:
-        prompt = self._codex_review_prompt(step)
+    def _run_codex_review(self, step: dict, *, reviewer: str = GENERAL_REVIEWER) -> ReviewResult:
+        prompt = self._codex_review_prompt(step, reviewer=reviewer)
         before_status = self._worktree_status()
         schema_path = self._write_review_output_schema()
         last_message_path = self._temporary_path(".txt")
@@ -1292,6 +1309,7 @@ class AutopilotRunner:
                     timeout=CODEX_EXEC_TIMEOUT,
                     output_schema=str(schema_path),
                     output_last_message=str(last_message_path),
+                    review_base=self._base_ref or f"origin/{self.base}",
                 ),
             )
             if result.thread_id:
@@ -1299,6 +1317,11 @@ class AutopilotRunner:
                 if self._active_run is not None:
                     self._transition_run("reviewing", thread_id=result.thread_id)
             last_message = result.final_message
+            if not last_message:
+                try:
+                    last_message = last_message_path.read_text(encoding="utf-8")
+                except OSError:
+                    pass
         except RunnerError as exc:
             runner_error = exc
         finally:
@@ -1359,7 +1382,7 @@ class AutopilotRunner:
             return f"<git status failed: {self._compact_output(result.stderr.strip())}>"
         return result.stdout.strip()
 
-    def _codex_review_prompt(self, step: dict) -> str:
+    def _codex_review_prompt(self, step: dict, *, reviewer: str = GENERAL_REVIEWER) -> str:
         step_num = step.get("step", "?")
         step_name = step.get("name", "unknown")
         task_metadata = ""
@@ -1371,9 +1394,16 @@ class AutopilotRunner:
         phase_readme = f"phases/{self.phase}/README.md"
         step_file = f"phases/{self.phase}/step{step_num}.md"
         python_bin = str(Path(sys.executable))
+        specialist_focus = ""
+        if reviewer == HIGH_RISK_REVIEWER:
+            specialist_focus = (
+                " This is the high-risk specialist lane: additionally inspect safety boundaries, "
+                "recovery and idempotency behavior, and sensitive-data handling."
+            )
         return (
             "Read-only review only. Do not modify files. "
             f"Review the current branch diff against origin/{self.base} for Harness project rules. "
+            f"Review lane is `{reviewer}`.{specialist_focus} "
             f"Current Harness step is Step {step_num} `{step_name}`.{task_metadata} "
             "Ignore generated review-failure records under issues/**; they are audit logs, not implementation changes. "
             f"Check {phase_readme} and {step_file} first, then AGENTS.md, docs/PRD.md, "

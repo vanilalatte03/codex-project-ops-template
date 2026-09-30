@@ -74,6 +74,11 @@
       "name": "local resumable run state contract",
       "paths": ["docs/RUN_STATE.md"],
       "pattern": "Local run state 계약"
+    },
+    {
+      "name": "risk based review policy",
+      "paths": ["docs/REVIEW_POLICY.md"],
+      "pattern": "# Review policy"
     }
   ],
   "finalRequired": [],

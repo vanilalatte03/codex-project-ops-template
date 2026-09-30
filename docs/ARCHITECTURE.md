@@ -11,7 +11,7 @@
 
 ```text
 scripts/
-  codex_runner.py  # exec 기본/SDK opt-in, 정규화 결과와 bounded fallback 경계
+  codex_runner.py  # exec 기본/SDK opt-in, native review와 legacy read-only fallback 경계
   run_state.py     # Git 관리 영역의 원자적 local run state와 재개·redaction 계약
   execute.py       # 한 task의 구현과 acceptance 재검증
   autopilot.py     # task별 PR, review, merge 직렬 루프
@@ -42,6 +42,10 @@ phases/{phase}/
   비민감 정규화 결과를 제공한다. production 기본은 `codex exec`이며 Python SDK는
   명시 opt-in이다. SDK pin/capability/실행 오류는 기존 sandbox·approval·환경 정책을
   가진 exec 경로로만 recoverable fallback한다.
+- `autopilot.py`: 일반 task에는 하나의 일반 read-only reviewer를 실행하고,
+  `risk`가 `high` 또는 `critical`인 task에만 high-risk specialist를 추가한다.
+  native CLI review가 실행되지 않으면 기존 JSON read-only review로 fallback하며,
+  어느 reviewer도 local checks·diff·scope·CI gate를 대체하지 않는다.
 
 ## 데이터 흐름
 
