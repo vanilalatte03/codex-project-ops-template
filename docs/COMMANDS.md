@@ -25,6 +25,11 @@ stage에서 `test`와 `build`는 필수 gate입니다. 둘 중 하나라도 비�
 | phase-step | `python scripts/execute.py <phase-name> --next-step-only` | no | 다음 pending step만 실행 |
 | autopilot | `python scripts/autopilot.py <phase-name> --max-review-fixes 2` | no | phase 전체 구현 시 권장. step별 PR 생성, 자체 리뷰, 이슈 기록, 자동 병합 루프 |
 
+문서 drift를 수동으로 점검할 때는 `python scripts/garden_docs.py`를 실행한다.
+ADR 인덱스 누락만 로컬에서 수정하려면 `python scripts/garden_docs.py --fix-safe
+--json`을 사용하고 diff를 검토한다. 정기 점검 운영 방법은
+[`GARDENING.md`](GARDENING.md)에 기록한다.
+
 v2 task DAG는 autopilot에서 기본 동시성 2를 사용한다. 구현 동시성은
 `--concurrency 1..4`로 제한하며 v1 phase는 항상 직렬 실행한다. 공유 자원은
 v2 task의 `resources`에 명시한다. PR merge와 state 갱신은 직렬이다.
