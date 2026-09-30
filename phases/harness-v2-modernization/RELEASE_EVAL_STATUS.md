@@ -1,65 +1,81 @@
-# Harness v2 릴리스 평가 진행 기록 (#23)
+# Harness v2 릴리스 평가 (#23)
 
 ## 판정
 
-2026-09-30 기준 **릴리스 보류**. 이 문서는 확인된 검증과 아직 없는 평가 자료를
-구분한다. `EVALS.md`의 v1/v2 동일 작업 반복 실행, hard/quality/efficiency
-gate 판정이 끝나기 전에는 Step 10을 완료하거나
-`TEMPLATE_VERSION`을 릴리스 버전으로 올리지 않는다. 담당 owner는 #23이다.
+2026-09-30 기준 **PR review·최신 CI 확인 전 릴리스 보류**. DOCS·CODE 모델 실행은
+양쪽 variant에서 같은 fixture로 로컬 acceptance를 통과했고, V1·SAFETY 계약은
+측정 3/3회 통과했다. `EVALS.md`의 전체 성공은 PR review와 해당 출력의 CI가
+확인되어야 한다. 담당 owner는 #23이다.
 
-## 고정된 관찰 조건
+## 조건과 원자료
 
-- v2 base commit: `bcfadc383f0b1a599bca7a34b0eba73482d8cc41`
-- v1 기준 commit: `a945f5bc9a64c40e97dcee18de91c4f59b39c7cb`
-- v1 phase fixture: `phases/0-example/index.json`, SHA-256
-  `AA8B5FF872FEC64BD83ED243378FBFF638282FE57625780E45CB5FA76B02125D`
-- v2 phase fixture: `phases/0-example-v2/index.json`, SHA-256
-  `7C104AB509777F5B59C375C0CC566014BE10CAEC2DA3593EB2C4FAFD6AFADD9D`
-- 로컬 검증 환경: Windows, uv Python 3.12.13, pytest 9.1.1, Codex CLI 0.146.0.
-  모델, effort, sandbox, approval policy, cache 상태는 실제 대표 작업을
-  실행할 때 raw record에 고정해야 한다.
+- v1 base: `a945f5bc9a64c40e97dcee18de91c4f59b39c7cb`; v2 base:
+  `bcfadc383f0b1a599bca7a34b0eba73482d8cc41`.
+- DOCS fixture SHA-256: `9d48d0b2b2499a854ec90da950a699ff23a31eca45bb602c582fac8be9037bd0`.
+  CODE fixture SHA-256: `a6ce6777939244b9815989902fb94c6bda8e7bd73a4b924ace38d96fa632bcd6`.
+- Windows 11, Python 3.12.13, Codex CLI 0.146.0, `gpt-5.6-luna`, effort `low`,
+  `workspace-write`, approval `never`, retry 상한 3, 기존 로컬 CLI cache.
+  각 실행은 임시 checkout에서 concurrency 1로 수행했다. `setupIncluded=false`.
+- [eval-results](eval-results/)에 실패 및 탐색 실행을 포함한 raw JSON을 보존한다.
+  `*-reviewed-1.json` 네 건은 허용된 합성 출력 파일을 보관하며
+  `scripts/tests/test_eval_release_artifacts.py`가 CI에서 다시 실행한다.
+  전체 prompt, credential, private thread 원문은 저장하지 않는다.
+- 재현: `uv run --with pytest python -B scripts/eval_release.py --variant v2
+  --scenario docs --repetition 1 --execute --output <result.json>`.
+  계약 반복은 `scripts/eval_release_contracts.py`로 실행한다.
 
-## 현재 검증 증거
+## 대표 시나리오 결과
 
-| 항목 | 결과 | 재현 또는 증거 |
-| --- | --- | --- |
-| Harness 단위 테스트 | 285 passed | `uv run --with pytest python -m pytest scripts` |
-| 템플릿 doctor | 통과 | `uv run --with pytest python scripts/doctor.py --template` |
-| phase docs-check | 통과 | `uv run --with pytest python scripts/checks.py --docs-check-config phases/harness-v2-modernization/docs-checks.json --docs-check` |
-| upgrade dry-run | 통과 | 서로 다른 체크아웃에서 `upgrade.main(['--from', <현재 템플릿>, '--dry-run'], instance_root=<기존 main>)` 실행, exit 0, 파일 변경 없음 |
-| 선행 #22의 CI | Ubuntu, macOS, Windows 통과 | [PR #36](https://github.com/vanilalatte03/codex-project-ops-template/pull/36)과 [develop run](https://github.com/vanilalatte03/codex-project-ops-template/actions/runs/36677819824) |
-| 현재 #23 PR의 CI | Ubuntu, macOS, Windows 통과 | [PR #37 CI run](https://github.com/vanilalatte03/codex-project-ops-template/actions/runs/36691149743) |
+DOCS·CODE의 비교 대상 측정은 각 variant·시나리오에서 1회다. 사전 탐색 실행
+(`*-ast-1.json`)은 측정과 별도로 남겼다. 각 모델 실행이 약 100초이며 고정된
+CLI 지원 모델 확인과 출력 보존을 위한 재실행에도 호출 비용이 들었으므로,
+`EVALS.md`가 허용한 비용 사유에 따라 warm-up 1회 + 측정 3회에서 줄였다.
+따라서 이 네 표본의 p95·성능 개선은 주장하지 않는다.
 
-기존 Step 10의 `python scripts/upgrade.py --from . --dry-run`은 exit 1
-(`--from must point to a different checkout than this instance`)로 재현됐다.
-이는 upgrade 자체의 실패가 아니라 잘못된 인수 기준이다. Step 10에는 자동
-dry-run 테스트와 별도 체크아웃 smoke 검증을 명시했다.
-
-## 남은 대표 평가
-
-아래 수치는 **미측정**이다. 단위 테스트 통과나 과거 CI를 대표 작업의 성공률,
-first-pass, 성능 개선으로 환산하지 않는다.
-
-| 시나리오 | v1 | v2 | 남은 자료 |
+| 시나리오 | v1 | v2 | 근거 |
 | --- | --- | --- | --- |
-| EVAL-DOCS | 미실행 | 미실행 | 고정 입력·기대 diff, warm-up 1회와 측정 3회 raw record |
-| EVAL-CODE | 미실행 | 미실행 | 동일 동작 수정·회귀 테스트 fixture와 raw record |
-| EVAL-V1 | 미실행 | 미실행 | 원본 v1 phase의 동일 순서·terminal status 반복 증거 |
-| EVAL-SAFETY | 미실행 | 미실행 | 금지 범위·read-only 변경 차단 반복 증거 |
-| EVAL-RESUME | unsupported | 미실행 | 중단·재개와 중복 action 방지 raw record |
-| EVAL-DEPS | unsupported | 미실행 | 독립 2개·의존 1개, 자원 충돌·직렬 merge raw record |
+| EVAL-DOCS | 로컬 1/1, 101.782초, 재시도 1 | 로컬 1/1, 101.906초, 재시도 1 | 같은 `docs/STATUS.md` 출력, scope·acceptance 통과 |
+| EVAL-CODE | 로컬 1/1, 104.391초, 재시도 1 | 로컬 1/1, 110.000초, 재시도 1 | 버그 수정과 회귀 테스트 출력, scope·acceptance 통과 |
+| EVAL-V1 | 계약 3/3 | 계약 3/3 | 기존 `steps[]` 순서 `[0,1]`, terminal `completed` |
+| EVAL-SAFETY | 계약 3/3 | 계약 3/3 | 위험 Git 명령을 pre-tool-use에서 `block`/`deny` |
+| EVAL-RESUME | unsupported | 계약 3/3 | run state, 동일 worktree 재개, merge idempotency 테스트 |
+| EVAL-DEPS | unsupported | 계약 3/3 | DAG 및 병렬 branch reconcile 테스트 |
 
-각 raw record에는 `EVALS.md`의 필수 필드 외에 fixture hash, 기대 결과,
-`setupIncluded`, retry 상한, cache 상태, 시작·종료 근거를 넣는다. v1의
-unsupported 실행은 분모에서 제외하고, 실패 실행은 삭제하지 않는다.
-비용이나 환경 제약으로 3회를 채우지 못하면 횟수와 사유를 남긴다.
+계약 시나리오는 각각 warm-up `run0`과 측정 `run1`~`run3`을 보관했다.
+RESUME은 지정 테스트 12개, DEPS는 8개가 각 반복에서 통과했다. V1·SAFETY의
+계약 실행은 Codex 모델 호출이 없는 격리 replay이며, task PR·CI의 대체물이
+아니다. v1의 RESUME·DEPS는 분모에서 제외한다.
 
-## 완료 절차
+DOCS·CODE의 **로컬** 성공률은 v1 2/2, v2 2/2이고 first-pass는 양쪽 0/2다.
+각 실행의 구현 재시도 1회, review fix 0회, 사람 개입 0회다. 같은 fixture의
+출력 테스트를 PR CI에 넣었지만 아직 CI 결과가 없어 raw record의 `success`와
+`firstPass`는 모두 `false`다. 사용량이 runner의 commit-safe 출력에 없어 token은
+0이 아닌 `null`로 기록했다. wall time의 시나리오별 단일 측정값을 median/p95로
+일반화하지 않는다. 이전 [EVALS.md](EVALS.md)의 prompt 구성 proxy는 UTF-8
+byte 86.03% 감소를 보여 주지만 실제 token·작업 성능 개선의 증거는 아니다.
+재시도와 사람 개입은 v1과 같아 운영 지표 유지 근거로만 사용한다.
 
-1. 모든 시나리오의 fixture와 입력 hash를 확정한 뒤 v1/v2에 동일 gate를 적용한다.
-2. raw record로 성공률, first-pass, retry, median/p95 wall time, 사람 개입,
-   가능한 token을 계산한다. token이 없으면 `null`과 사유를 기록한다.
-3. EVAL-V1·EVAL-SAFETY 100%와 v2 품질 비회귀를 확인한다.
-4. 이 PR의 자체 review를 확인한다. Ubuntu/macOS/Windows CI는 위 run에서 통과했다.
-5. 모든 gate가 통과한 경우에만 CHANGELOG, 버전 마커, Step 10·phase 상태와
-   최종 판정을 함께 갱신한다. 미달이면 #23에 blocker, owner, rollback 판단을 남긴다.
+초기 `v1-docs-1.json`은 CLI 미지원 모델 선택으로 실패했고,
+`v1-compat-1.json`은 평가 스크립트 import 경로 오류로 실패했다. 두 기록을
+보존했으며 고정 비교 조건 확정 전 설정 실패로 분리했다. Codex CLI의 모델
+cache 갱신·MCP 종료 경고는 v1 runner 출력에 남았지만 해당 실행은 acceptance를
+통과했다. 이 경고를 제품 코드 실패로 집계하지 않는다.
+
+## 릴리스 gate
+
+| 항목 | 현재 증거 | 상태 |
+| --- | --- | --- |
+| hard: V1·SAFETY | 양쪽 측정 3/3 계약 통과 | 충족 |
+| hard: unit test | `uv run --with pytest python -m pytest -q scripts`: 298 passed | 충족 |
+| hard: doctor·upgrade·docs-check | 아래 검증 및 CI 재확인 필요 | 확인 중 |
+| hard: Ubuntu/macOS/Windows CI | 이번 평가 출력 commit의 CI 필요 | 대기 |
+| quality | 로컬 성공률 2/2 동률, first-pass 0/2 동률 | CI·review 대기 |
+| efficiency | 재시도 2회/variant, 사람 개입 0회/variant 유지 | 약한 유지 근거; 성능 향상 미주장 |
+
+`upgrade.py --from . --dry-run`은 동일 체크아웃을 source와 instance로 주면
+exit 1 (`--from must point to a different checkout than this instance`)이다.
+Step 10 인수 기준은 별도 checkout dry-run과 upgrade 테스트로 바로잡았다.
+기존 별도 checkout smoke 실행은 exit 0이고 파일 변경이 없었다. 최신 commit에서
+doctor·upgrade·docs-check와 CI가 통과하면 자체 review 결과를 이 문서에
+추가하고 릴리스 버전·Step 10·phase 상태를 갱신한다. 미달이면 PR은 Draft로
+유지하고 #23에 blocker와 rollback 판단을 남긴다.

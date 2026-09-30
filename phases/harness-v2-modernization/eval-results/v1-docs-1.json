@@ -1,0 +1,54 @@
+{
+  "variant": "v1",
+  "scenario": "EVAL-DOCS",
+  "repetition": 1,
+  "baseCommit": "a945f5bc9a64c40e97dcee18de91c4f59b39c7cb",
+  "fixtureSha256": "78ed006fbcf9d379d85119348bab6c9e7fa2bc0b32f930ef4d57acaf284fa539",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "codex": "codex-cli 0.146.0",
+    "model": "gpt-6-sol",
+    "effort": "low",
+    "sandbox": "workspace-write",
+    "approvalPolicy": "CLI noninteractive"
+  },
+  "setupIncluded": false,
+  "cacheState": "existing local CLI cache",
+  "retryLimit": 3,
+  "success": false,
+  "firstPass": false,
+  "implementationRetryCount": 2,
+  "reviewFixCount": 0,
+  "wallTimeSeconds": 44.547,
+  "humanInterventionCount": 0,
+  "tokens": null,
+  "unavailableReason": "Harness runner commit-safe output does not expose usage",
+  "evidence": [
+    "local fixture commit a4e7ad75a2e3f336be686af073d62e5ddbcda0d4",
+    "run output SHA-256 07374c4e009b07fd16f4725de5a7cccc318356c03cefced00dd2d070fcc6e356"
+  ],
+  "scope": "local task and acceptance only; PR review and CI not run per sample",
+  "exitCode": 1,
+  "runOutputSha256": "07374c4e009b07fd16f4725de5a7cccc318356c03cefced00dd2d070fcc6e356",
+  "errorSummary": "]\n◓ Step 0/0 (0 done): eval-docs [retry 3/3] [10s]\n◑ Step 0/0 (0 done): eval-docs [retry 3/3] [10s]\n◒ Step 0/0 (0 done): eval-docs [retry 3/3] [10s]\n◐ Step 0/0 (0 done): eval-docs [retry 3/3] [11s]\n◓ Step 0/0 (0 done): eval-docs [retry 3/3] [11s]\n◑ Step 0/0 (0 done): eval-docs [retry 3/3] [11s]\n◒ Step 0/0 (0 done): eval-docs [retry 3/3] [11s]\n◐ Step 0/0 (0 done): eval-docs [retry 3/3] [11s]\n◓ Step 0/0 (0 done): eval-docs [retry 3/3] [11s]\n◑ Step 0/0 (0 done): eval-docs [retry 3/3] [11s]\n◒ Step 0/0 (0 done): eval-docs [retry 3/3] [11s]\n◐ Step 0/0 (0 done): eval-docs [retry 3/3] [12s]\n◓ Step 0/0 (0 done): eval-docs [retry 3/3] [12s]\n                                                            \n",
+  "terminalStatus": "error",
+  "terminalReason": "[3회 시도 후 실패] Step did not update status",
+  "runner": {
+    "ok": null,
+    "adapter": null,
+    "exitCode": 1,
+    "errorKind": null,
+    "fallbackReason": null
+  },
+  "runnerDiagnostic": "2026-09-30T11:33:35.324804Z  WARN codex_rmcp_client::oauth::refresh_transaction: MCP OAuth refresh transaction failed server_name=cloudflare-api refresh_reason=\"expiry\" error=failed to refresh OAuth tokens for server cloudflare-api: OAuth token refresh failed: Server returned error response: invalid_client: Client not found | 2026-09-30T11:33:36.888613Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: {\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account.\"}} | 2026-09-30T11:33:39.331145Z  WARN codex_mcp::rmcp_client: failed to initialize MCP client during shutdown: MCP startup failed: failed to refresh OAuth tokens for server cloudflare-api: OAuth token",
+  "runnerEvent": "{'message': '{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The \\'gpt-6-sol\\' model is not supported when using Codex with a ChatGPT account.\"}}'}",
+  "changedPaths": [
+    "phases/release-eval-fixture/index.json"
+  ],
+  "scopePass": true,
+  "acceptancePass": false,
+  "expectedResultPass": false,
+  "localSuccess": false,
+  "status": "local-failed"
+}

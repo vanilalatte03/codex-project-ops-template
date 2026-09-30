@@ -54,3 +54,14 @@ def test_build_gate_parses_source_without_creating_bytecode(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert not list(tmp_path.rglob("__pycache__"))
+
+
+def test_capture_output_files_keeps_only_synthetic_task_files(tmp_path):
+    eval_release.write_files(tmp_path, eval_release.fixture_files("code"))
+    (tmp_path / "docs/private.txt").write_text("do not capture", encoding="utf-8")
+
+    captured = eval_release.capture_output_files(tmp_path, "code")
+
+    assert set(captured) == {"eval_pkg/calc.py", "eval_tests/__init__.py", "eval_tests/test_code.py"}
+    assert captured["eval_pkg/calc.py"] == (tmp_path / "eval_pkg/calc.py").read_text(encoding="utf-8")
+    assert "private.txt" not in str(captured)

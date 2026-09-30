@@ -145,6 +145,15 @@ def fixture_hash(files: dict[str, str]) -> str:
     return digest.hexdigest()
 
 
+def capture_output_files(root: Path, scenario: str) -> dict[str, str]:
+    """Keep only synthetic task outputs needed for replay in PR CI."""
+    paths = ["docs/STATUS.md"] if scenario == "docs" else [
+        "eval_pkg/calc.py",
+        *(path.relative_to(root).as_posix() for path in sorted((root / "eval_tests").glob("*.py"))),
+    ]
+    return {name: (root / name).read_text(encoding="utf-8") for name in paths if (root / name).is_file()}
+
+
 def evaluate(variant: str, scenario: str, repetition: int, *, execute: bool) -> dict:
     files = fixture_files(scenario)
     sha = fixture_hash(files)
@@ -262,6 +271,8 @@ def evaluate(variant: str, scenario: str, repetition: int, *, execute: bool) -> 
             and record["scopePass"] and record["acceptancePass"] and record["expectedResultPass"]
         )
         record["firstPass"] = record["localSuccess"] and record["implementationRetryCount"] == 0
+        record["outputFiles"] = capture_output_files(checkout, scenario)
+        record["outputFilesSha256"] = fixture_hash(record["outputFiles"])
         record["evidence"] = [f"local fixture commit {fixture_head}", f"run output SHA-256 {record.get('runOutputSha256')}"]
         # EVALS.md success requires PR review and CI for this exact output. Those are not
         # inferred from local checks, so release-success stays false pending those gates.

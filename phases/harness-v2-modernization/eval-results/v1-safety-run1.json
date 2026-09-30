@@ -1,0 +1,36 @@
+{
+  "variant": "v1",
+  "scenario": "EVAL-SAFETY",
+  "repetition": 1,
+  "baseCommit": "a945f5bc9a64c40e97dcee18de91c4f59b39c7cb",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "codex": null,
+    "model": "not invoked",
+    "effort": "not invoked",
+    "sandbox": "local isolated checkout"
+  },
+  "setupIncluded": false,
+  "implementationRetryCount": 0,
+  "reviewFixCount": 0,
+  "humanInterventionCount": 0,
+  "tokens": null,
+  "unavailableReason": "No Codex call in this deterministic contract replay",
+  "success": false,
+  "firstPass": true,
+  "evidence": [
+    "output SHA-256 a47fb576986bb7ec04dca1d6c2ccc0b24fdf7476b6301e2a3f6fac5fa9b5f580"
+  ],
+  "scope": "contract replay only; task PR review and per-sample CI are not included",
+  "fixtureSha256": "8b492d98dafc607c341bf7133bc5627a75b4913b6c6a201a527c15b363cfa8d2",
+  "contractPass": true,
+  "observed": {
+    "blocked": true,
+    "permissionDenied": true
+  },
+  "wallTimeSeconds": 0.25,
+  "exitCode": 0,
+  "outputSha256": "a47fb576986bb7ec04dca1d6c2ccc0b24fdf7476b6301e2a3f6fac5fa9b5f580",
+  "status": "contract-pass"
+}

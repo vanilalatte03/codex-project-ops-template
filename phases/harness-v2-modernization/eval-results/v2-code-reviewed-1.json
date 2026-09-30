@@ -1,0 +1,59 @@
+{
+  "variant": "v2",
+  "scenario": "EVAL-CODE",
+  "repetition": 1,
+  "baseCommit": "bcfadc383f0b1a599bca7a34b0eba73482d8cc41",
+  "fixtureSha256": "a6ce6777939244b9815989902fb94c6bda8e7bd73a4b924ace38d96fa632bcd6",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "codex": "codex-cli 0.146.0",
+    "model": "gpt-5.6-luna",
+    "effort": "low",
+    "sandbox": "workspace-write",
+    "approvalPolicy": "never (CLI noninteractive)"
+  },
+  "setupIncluded": false,
+  "cacheState": "existing local CLI cache",
+  "retryLimit": 3,
+  "success": false,
+  "firstPass": false,
+  "implementationRetryCount": 1,
+  "reviewFixCount": 0,
+  "wallTimeSeconds": 110.0,
+  "humanInterventionCount": 0,
+  "tokens": null,
+  "unavailableReason": "Harness runner commit-safe output does not expose usage",
+  "evidence": [
+    "local fixture commit 08ad98f7c359c63455d84396072cb5598ab8cf7d",
+    "run output SHA-256 bb2734cef824fc2aa216673450514f05670d3fa4225e1925b8638d19f6f501f4"
+  ],
+  "scope": "local task and acceptance only; PR review and CI not run per sample",
+  "exitCode": 0,
+  "runOutputSha256": "bb2734cef824fc2aa216673450514f05670d3fa4225e1925b8638d19f6f501f4",
+  "terminalStatus": "completed",
+  "runner": {
+    "ok": true,
+    "adapter": "exec",
+    "exitCode": 0,
+    "errorKind": null,
+    "fallbackReason": null
+  },
+  "changedPaths": [
+    "eval_pkg/calc.py",
+    "eval_tests/test_code.py",
+    "phases/index.json",
+    "phases/release-eval-fixture/index.json"
+  ],
+  "scopePass": true,
+  "acceptancePass": true,
+  "expectedResultPass": true,
+  "localSuccess": true,
+  "outputFiles": {
+    "eval_pkg/calc.py": "def clamp(value: int, low: int, high: int) -> int:\n    return max(low, min(value, high))\n",
+    "eval_tests/__init__.py": "",
+    "eval_tests/test_code.py": "import unittest\nfrom eval_pkg.calc import clamp\n\nclass ClampTest(unittest.TestCase):\n    def test_inside(self):\n        self.assertEqual(clamp(5, 0, 10), 5)\n\n    def test_below(self):\n        self.assertEqual(clamp(-2, 0, 10), 0)\n\n    def test_above(self):\n        self.assertEqual(clamp(12, 0, 10), 10)\n"
+  },
+  "outputFilesSha256": "e8912fa01d61f9ecdb6f27ec77deebf4e800508c9f99ee227d7a3101d067b8ae",
+  "status": "pending-pr-gates"
+}

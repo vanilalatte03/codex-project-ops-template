@@ -1,0 +1,60 @@
+{
+  "variant": "v1",
+  "scenario": "EVAL-CODE",
+  "repetition": 1,
+  "baseCommit": "a945f5bc9a64c40e97dcee18de91c4f59b39c7cb",
+  "fixtureSha256": "a6ce6777939244b9815989902fb94c6bda8e7bd73a4b924ace38d96fa632bcd6",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "codex": "codex-cli 0.146.0",
+    "model": "gpt-5.6-luna",
+    "effort": "low",
+    "sandbox": "workspace-write",
+    "approvalPolicy": "never (CLI noninteractive)"
+  },
+  "setupIncluded": false,
+  "cacheState": "existing local CLI cache",
+  "retryLimit": 3,
+  "success": false,
+  "firstPass": false,
+  "implementationRetryCount": 1,
+  "reviewFixCount": 0,
+  "wallTimeSeconds": 104.391,
+  "humanInterventionCount": 0,
+  "tokens": null,
+  "unavailableReason": "Harness runner commit-safe output does not expose usage",
+  "evidence": [
+    "local fixture commit ad9e5be5dc681b253d9c09f14b5c03d6aa5ec956",
+    "run output SHA-256 2cf86f8cb22ec2825df58161496e6a65eb90c7a11a61c58c8a3ebb4b8e7e1091"
+  ],
+  "scope": "local task and acceptance only; PR review and CI not run per sample",
+  "exitCode": 0,
+  "runOutputSha256": "2cf86f8cb22ec2825df58161496e6a65eb90c7a11a61c58c8a3ebb4b8e7e1091",
+  "terminalStatus": "completed",
+  "runner": {
+    "ok": null,
+    "adapter": null,
+    "exitCode": 0,
+    "errorKind": null,
+    "fallbackReason": null
+  },
+  "runnerDiagnostic": "2026-09-30T12:16:31.171128Z ERROR codex_models_manager::manager: failed to renew cache TTL: missing field `base_instructions` at line 138 column 5 | 2026-09-30T12:16:40.079708Z ERROR codex_models_manager::manager: failed to renew cache TTL: missing field `base_instructions` at line 138 column 5 | 2026-09-30T12:16:48.444939Z  WARN codex_mcp::rmcp_client: failed to initialize MCP client during shutdown: MCP startup failed: failed to refresh OAuth tokens for server cloudflare-api: OAuth token refresh failed: Server returned error response: invalid_client: Client not found",
+  "changedPaths": [
+    "eval_pkg/calc.py",
+    "eval_tests/test_code.py",
+    "phases/index.json",
+    "phases/release-eval-fixture/index.json"
+  ],
+  "scopePass": true,
+  "acceptancePass": true,
+  "expectedResultPass": true,
+  "localSuccess": true,
+  "outputFiles": {
+    "eval_pkg/calc.py": "def clamp(value: int, low: int, high: int) -> int:\n    return max(low, min(value, high))\n",
+    "eval_tests/__init__.py": "",
+    "eval_tests/test_code.py": "import unittest\nfrom eval_pkg.calc import clamp\n\nclass ClampTest(unittest.TestCase):\n    def test_inside(self):\n        self.assertEqual(clamp(5, 0, 10), 5)\n\n    def test_below(self):\n        self.assertEqual(clamp(-2, 0, 10), 0)\n\n    def test_at_lower_boundary(self):\n        self.assertEqual(clamp(0, 0, 10), 0)\n\n    def test_at_upper_boundary(self):\n        self.assertEqual(clamp(10, 0, 10), 10)\n"
+  },
+  "outputFilesSha256": "cc38796222528e1ec98a18f29a5cba541acae66df8c60fdb1bbd269d8bb805e8",
+  "status": "pending-pr-gates"
+}
