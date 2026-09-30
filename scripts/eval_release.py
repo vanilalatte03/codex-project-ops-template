@@ -105,7 +105,11 @@ def fixture_files(scenario: str) -> dict[str, str]:
             "외부 API와 DB는 없다.\n"
         ),
         ".codex/project-profile.json": json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
-        ".codex/config.toml": 'model = "gpt-6-sol"\nsandbox_mode = "workspace-write"\n',
+        ".codex/config.toml": (
+            'model = "gpt-5.6-luna"\n'
+            'sandbox_mode = "workspace-write"\n'
+            'approval_policy = "never"\n'
+        ),
         "phases/index.json": json.dumps({"phases": [{"dir": PHASE, "status": "pending"}]}, indent=2) + "\n",
         f"phases/{PHASE}/README.md": f"# Phase: {PHASE}\n\n## 목표\n{spec['task']}\n",
         f"phases/{PHASE}/index.json": json.dumps(
@@ -145,8 +149,8 @@ def evaluate(variant: str, scenario: str, repetition: int, *, execute: bool) -> 
         "fixtureSha256": sha,
         "environment": {
             "os": platform.platform(), "python": platform.python_version(),
-            "codex": "codex-cli 0.146.0", "model": "gpt-6-sol", "effort": "low",
-            "sandbox": "workspace-write", "approvalPolicy": "CLI noninteractive",
+            "codex": "codex-cli 0.146.0", "model": "gpt-5.6-luna", "effort": "low",
+            "sandbox": "workspace-write", "approvalPolicy": "never (CLI noninteractive)",
         },
         "setupIncluded": False,
         "cacheState": "existing local CLI cache",
