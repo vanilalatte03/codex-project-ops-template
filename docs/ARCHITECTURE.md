@@ -19,6 +19,7 @@ scripts/
   task_schema.py   # v1/v2 phase index validator와 memory view
   dag.py           # v2 ready set과 공유 자원별 bounded batch
   doctor.py        # template/instance readiness 검사
+  garden_docs.py   # 문서 링크·명령·ADR 인덱스 정적 점검과 제한된 로컬 수정
 docs/
   WORKTREE_LIFECYCLE.md
   adr/0004-isolated-task-worktrees.md
@@ -46,6 +47,9 @@ phases/{phase}/
   비민감 정규화 결과를 제공한다. production 기본은 `codex exec`이며 Python SDK는
   명시 opt-in이다. SDK pin/capability/실행 오류는 기존 sandbox·approval·환경 정책을
   가진 exec 경로로만 recoverable fallback한다.
+- `garden_docs.py`: 문서의 로컬 링크, 스크립트 참조, ADR 인덱스를 정적으로
+  검사한다. `--fix-safe`는 빠진 ADR 인덱스 항목만 로컬에서 추가한다.
+  정기 GitHub Actions는 읽기 전용 결과만 표시하며 원격 이슈나 PR을 만들지 않는다.
 - `autopilot.py`: 일반 task에는 하나의 일반 read-only reviewer를 실행하고,
   `risk`가 `high` 또는 `critical`인 task에만 high-risk specialist를 추가한다.
   native CLI review가 실행되지 않으면 기존 JSON read-only review로 fallback하며,

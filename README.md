@@ -207,6 +207,9 @@ python scripts/upgrade.py --from <template-checkout>            # 적용 + templ
 
 ## 템플릿 자체 개발
 
+문서와 아키텍처 경로 점검은 [docs/GARDENING.md](docs/GARDENING.md)의 수동 명령과
+읽기 전용 정기 workflow를 사용합니다.
+
 이 템플릿 레포 자체를 수정할 때만 해당합니다. 대상 프로젝트의 `dev`, `lint`,
 `test`, `build` 명령은 복사한 프로젝트에서 채웁니다.
 

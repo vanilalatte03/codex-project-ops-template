@@ -1,0 +1,46 @@
+name: Documentation gardening
+
+on:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-gardening
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate template contracts and phase schema
+        run: python scripts/doctor.py --template
+      - name: Audit documentation
+        run: python scripts/garden_docs.py --json > gardening.json
+      - name: Summarize findings
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path("gardening.json").read_text(encoding="utf-8"))
+          lines = ["# Documentation gardening", ""]
+          for item in report["needsJudgment"]:
+              lines.append(f"- `{item['path']}:{item['line']}` {item['kind']}: `{item['target']}`")
+          if not report["needsJudgment"]:
+              lines.append("No drift detected.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines) + "\n")
+          if report["needsJudgment"]:
+              raise SystemExit(1)
+          PY
