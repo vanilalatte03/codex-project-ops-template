@@ -38,6 +38,14 @@
   dry-run 매핑 검토, validator와 companion 문서 검증, 사용자 승인, 별도 commit을
   포함한 명시적 opt-in 절차를 사용한다.
 
+## bounded DAG 실행 (#22)
+
+v2 task는 cycle 검증 후 `completed` dependency만 충족된 것으로 보아 ready set을
+계산한다. autopilot은 독립 task의 구현을 기본 2개, 최대 4개 worktree에서 실행하고
+`resources`가 겹치는 task는 같은 배치에 넣지 않는다. PR과 phase state 갱신은
+직렬로 처리하며, 병합 충돌 시 worktree와 local run state를 보존한다.
+v1 phase는 기존 list-order와 직렬 실행을 유지한다.
+
 ## fallback 원칙
 
 - SDK 또는 native review가 설치되지 않았거나 capability 검증, 인증, sandbox,

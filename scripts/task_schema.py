@@ -27,7 +27,7 @@ VALID_STATUSES = frozenset({"pending", "completed", "error", "blocked"})
 V1_TASK_KEY = "steps"
 V2_TASK_KEY = "tasks"
 V2_REQUIRED_TASK_FIELDS = frozenset({"id", "objective", "status"})
-V2_OPTIONAL_TASK_FIELDS = frozenset({"dependsOn", "issue", "risk"})
+V2_OPTIONAL_TASK_FIELDS = frozenset({"dependsOn", "issue", "risk", "resources"})
 LIFECYCLE_FIELDS = frozenset(
     {
         "summary",
@@ -437,6 +437,23 @@ def _normalize_v2_task(
         errors.append(SchemaIssue(f"{task_path}.risk", "risk must be a string"))
         valid = False
 
+    resources = values.get("resources", [])
+    if not isinstance(resources, list):
+        errors.append(SchemaIssue(f"{task_path}.resources", "resources must be a list"))
+        valid = False
+    else:
+        seen_resources: set[str] = set()
+        for resource_index, resource in enumerate(resources):
+            resource_path = f"{task_path}.resources[{resource_index}]"
+            if not _non_empty_string(resource):
+                errors.append(SchemaIssue(resource_path, "resource must be a non-empty string"))
+                valid = False
+            elif resource in seen_resources:
+                errors.append(SchemaIssue(resource_path, f"duplicate resource '{resource}'"))
+                valid = False
+            else:
+                seen_resources.add(resource)
+
     for field in LIFECYCLE_FIELDS:
         if field in values and not isinstance(values[field], str):
             errors.append(SchemaIssue(f"{task_path}.{field}", f"{field} must be a string"))
@@ -465,6 +482,7 @@ def _validate_dependencies(
     task_key: str,
     errors: list[SchemaIssue],
 ) -> None:
+    by_id = {task["id"]: task for task in tasks if isinstance(task.get("id"), str)}
     for task in tasks:
         index = task.source_index
         task_id = task.get("id")
@@ -481,6 +499,33 @@ def _validate_dependencies(
                         f"unknown task id '{dependency}'",
                     )
                 )
+
+    # Reference errors are reported above with their exact source location.
+    # Traverse only resolvable edges so a malformed graph still reports all
+    # useful diagnostics before any executor or GitHub operation begins.
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(task_id: str) -> None:
+        if task_id in visited or task_id in visiting:
+            return
+        visiting.add(task_id)
+        task = by_id[task_id]
+        for dep_index, dependency in enumerate(task.get("dependsOn", [])):
+            if dependency not in by_id or dependency == task_id:
+                continue
+            if dependency in visiting:
+                errors.append(SchemaIssue(
+                    f"{display_path} {task_key}[{task.source_index}].dependsOn[{dep_index}]",
+                    f"dependency cycle reaches '{dependency}'",
+                ))
+            else:
+                visit(dependency)
+        visiting.remove(task_id)
+        visited.add(task_id)
+
+    for task_id in by_id:
+        visit(task_id)
 
 
 def _non_empty_string(value: Any) -> bool:

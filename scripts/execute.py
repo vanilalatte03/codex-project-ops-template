@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 import checks
+import dag
 import guard
 import task_schema
 from codex_common import (
@@ -746,7 +747,13 @@ class StepExecutor:
     def _execute_all_steps(self, guardrails: str, command_context: str):
         while True:
             index = self._read_phase_index()
-            pending = next((s for s in index["steps"] if s["status"] == "pending"), None)
+            if index.schema_version == 2:
+                ready = dag.ready_tasks(index)
+                pending = ready[0] if ready else None
+                if pending is None and any(s["status"] == "pending" for s in index.tasks):
+                    raise RuntimeError("pending task의 dependency가 완료되지 않았습니다")
+            else:
+                pending = next((s for s in index["steps"] if s["status"] == "pending"), None)
             if pending is None:
                 print("\n  All steps completed!")
                 return
@@ -780,8 +787,12 @@ class StepExecutor:
     def _select_single_step(self) -> Optional[dict]:
         index = self._read_phase_index()
         steps = index["steps"]
-        pending = next((s for s in steps if s["status"] == "pending"), None)
+        ready = dag.ready_tasks(index) if index.schema_version == 2 else []
+        pending = (ready[0] if ready else None) if index.schema_version == 2 else next((s for s in steps if s["status"] == "pending"), None)
         if pending is None:
+            if any(s["status"] == "pending" for s in steps):
+                print("  ERROR: pending task의 dependency가 완료되지 않았습니다.")
+                sys.exit(1)
             return None
         if self._next_step_only:
             return pending
@@ -790,7 +801,10 @@ class StepExecutor:
         if target is None:
             print(f"  ERROR: Step {self._step_number} not found.")
             sys.exit(1)
-        if target["step"] != pending["step"]:
+        if index.schema_version == 2 and target not in ready:
+            print(f"  ERROR: Step {self._step_number}의 dependency가 완료되지 않았습니다.")
+            sys.exit(1)
+        if index.schema_version == 1 and target["step"] != pending["step"]:
             print(
                 f"  ERROR: Step {self._step_number} cannot run before "
                 f"pending Step {pending['step']} ({pending['name']})."
