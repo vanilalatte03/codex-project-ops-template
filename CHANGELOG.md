@@ -6,6 +6,14 @@
 형식, doctor 검사 등)를 먼저 확인합니다. 절차는
 [guides/UPGRADE.md](guides/UPGRADE.md)를 따릅니다.
 
+## Unreleased
+
+### Documentation
+- #22의 v2 DAG ready set, 기본 2개·최대 4개 구현 동시성, 공유 자원 충돌 회피와
+  직렬 PR 병합 계약을 README, guides, skills, architecture에 반영했습니다.
+- #23의 릴리스 평가 진행 기록과 별도 체크아웃을 사용하는 upgrade dry-run 절차를
+  추가했습니다. 대표 작업의 v1/v2 반복 평가와 릴리스 판정은 진행 중입니다.
+
 ## 2026.09.04.1
 
 ### Added

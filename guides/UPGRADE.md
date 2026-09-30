@@ -91,8 +91,9 @@ Harness 업그레이드는 phase index를 자동으로 v1에서 v2로 변환하�
 4. 승인된 변경만 별도 commit으로 적용하고, 실패하면 백업한 v1 원본으로 복구합니다.
 
 읽기 중 생성되는 v2의 `step`/`name` alias는 메모리 값이며 JSON에 저장되지
-않습니다. `dependsOn`은 현재 직렬 실행 순서를 바꾸지 않고, DAG scheduler·cycle
-처리·parallelism은 후속 기능으로 남겨 둡니다.
+않습니다. v2는 `dependsOn`의 cycle을 검증한 뒤 ready task를 기본 2개, 최대
+4개까지 병렬 구현합니다. 공유 `resources`가 겹치면 같은 배치에서 실행하지
+않고, PR 병합과 상태 갱신은 직렬로 처리합니다. v1은 기존 순서를 유지합니다.
 
 ## task worktree migration
 

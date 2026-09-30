@@ -62,10 +62,12 @@ dependency reference와 migration 경계는 [docs/TASK_SCHEMA.md](../docs/TASK_S
 중복 id, missing/self dependency, 잘못된 타입이나 status는 Codex 호출 전에
 파일·필드 경로와 reason을 출력하고 중단합니다.
 
-v2의 `dependsOn`은 현재 배열 순서의 직렬 실행을 바꾸지 않는 메타데이터입니다.
-ready set, cycle 처리, DAG 스케줄링과 병렬 실행은 후속 범위이며, v1 phase를 v2로
-자동 migration하지 않습니다. 변환이 필요하면 원본 백업과 dry-run, 사용자 승인,
-별도 commit을 갖춘 명시적 opt-in 작업으로 수행합니다.
+v2는 `dependsOn`의 cycle을 실행 전에 검증하고 완료된 선행 task의 ready set을
+계산합니다. autopilot은 독립 task 구현을 기본 2개, 최대 4개까지 병렬 실행하며
+겹치는 `resources`는 같은 배치에서 실행하지 않습니다. PR 병합과 상태 갱신은
+직렬입니다. v1은 배열 순서로 직렬 실행하고, 자동 migration하지 않습니다.
+변환이 필요하면 원본 백업과 dry-run, 사용자 승인, 별도 commit을 갖춘 명시적
+opt-in 작업으로 수행합니다.
 
 ## Progressive guardrails
 

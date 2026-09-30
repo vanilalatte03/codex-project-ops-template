@@ -10,7 +10,7 @@ Codex 기반 개인 프로젝트 운영 템플릿입니다. 이 레포는 앱 �
 ```text
 ① 셋업    템플릿 복사 → Git hook 설정 → Plan Mode로 문서 채우기 → doctor 통과
 ② 설계    Harness skill로 MVP를 phase/step 문서로 분해
-③ 실행    autopilot.py가 task worktree에서 구현·검증·review·PR을 직렬 수행
+③ 실행    autopilot.py가 task worktree에서 구현·검증·review·PR을 수행
 ④ 검증    guard hook + checks + 자체 리뷰가 매 task의 범위와 품질을 지킴
 ```
 
@@ -120,8 +120,10 @@ resume/cleanup 규칙은 [docs/WORKTREE_LIFECYCLE.md](docs/WORKTREE_LIFECYCLE.md
 ### autopilot.py — step별 PR 루프
 
 실행 전 아래 사전 조건을 먼저 확인합니다. v1/v2 phase index는 GitHub 인증이나
-Codex 호출 전에 공통 validator로 확인하며, v2의 `dependsOn`은 현재 실행 순서를
-바꾸지 않는 참조 메타데이터입니다.
+Codex 호출 전에 공통 validator로 확인합니다. v1은 배열 순서로 직렬 실행하고,
+v2는 검증된 의존성의 ready task를 기본 2개(최대 4개)까지 병렬 구현합니다.
+공유 `resources`가 겹치는 task는 같은 배치에서 실행하지 않으며 PR 병합과 상태
+갱신은 직렬로 처리합니다.
 
 - 문서와 phase 파일 변경이 별도 commit으로 완료되어 있음
 - `git status --short`가 비어 있는 clean worktree 상태임
@@ -137,10 +139,11 @@ python scripts/autopilot.py {phase-name} --max-review-fixes 2  # phase 전체 �
 
 autopilot은 task마다 아래 루프를 반복합니다.
 
-1. base를 fetch하고 SHA를 고정한 뒤, 다음 pending task의
-   `codex/{phase}-step{N}-{name}` branch와 독립 worktree를 준비합니다.
-2. task worktree에서 구현·인수 기준·scope rule scan·Codex read-only review를
-   수행하고 Draft PR을 만듭니다.
+1. base를 fetch하고 SHA를 고정한 뒤, v1의 다음 pending step 또는 v2의 ready
+   task를 선택해 각각 독립 branch와 worktree를 준비합니다.
+2. task worktree에서 구현·인수 기준을 수행하고 Draft PR을 만듭니다. v2 독립
+   task 구현은 `--concurrency 1..4` 상한 안에서 병렬 실행할 수 있습니다.
+   scope rule scan과 Codex read-only review는 각 task에 적용합니다.
 3. step 인수 기준 명령 또는 `python scripts/checks.py --stage manual`,
    `git diff --check`가 통과하면 PR을 ready로 전환합니다.
 4. PR ready 후 `gh pr checks --watch` 원격 체크가 통과해야 squash merge하고,

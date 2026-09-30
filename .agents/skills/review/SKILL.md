@@ -40,10 +40,10 @@ description: "Codex가 이 Harness 기반 프로젝트의 변경사항을 AGENTS
    status 계약을 따르는가?
 7. pre-Codex safety: 중복 id, missing/self dependency, 필수 필드·타입·status 오류가
    Codex/GitHub 호출 전에 파일 및 필드 경로와 reason으로 거부되는가?
-8. scope boundary: v2 alias가 저장 시 v1/v2 원형을 바꾸지 않고, #22의 DAG
-   scheduler·ready set·cycle 처리·parallelism이나 자동 migration을 선행하지 않는가?
+8. scope boundary: v2 alias가 저장 시 v1/v2 원형을 바꾸지 않고, DAG ready set·
+   공유 자원·bounded concurrency를 지키며 자동 migration하지 않는가?
 9. worktree safety: `scripts/worktree.py`의 marker owner/task/path/branch/base SHA가
-   일치하는 경우만 resume하고, primary branch 불변·동시성 1·실패 보존·stale
+   일치하는 경우만 resume하고, primary branch 불변·v1 직렬/v2 최대 4개·실패 보존·stale
    administrative entry 진단·merged/clean/head 검증 뒤의 non-force cleanup을
    지키는가? 사용자 worktree/branch를 자동 삭제·이동·prune하지 않는가?
 
@@ -58,7 +58,7 @@ description: "Codex가 이 Harness 기반 프로젝트의 변경사항을 AGENTS
 | 테스트 존재 | 통과/실패 | {상세} |
 | CRITICAL 규칙 | 통과/실패 | {상세} |
 | task schema와 pre-Codex 검증 | 통과/실패 | {v1/v2 contract, path/reason 오류, 실행 전 차단} |
-| 후속 범위 격리 | 통과/실패 | {DAG/parallel/migration 선행 여부} |
+| 실행 범위 격리 | 통과/실패 | {v1 순서, v2 ready set과 자원 충돌, migration 여부} |
 | worktree 소유권·정리 안전성 | 통과/실패 | {primary 불변, marker, stale/실패 보존, cleanup gate} |
 | 빌드 가능 | 통과/실패 | {상세} |
 
