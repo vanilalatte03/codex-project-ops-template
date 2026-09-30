@@ -11,7 +11,7 @@ import eval_release
 
 def _unittest_exit(root):
     return subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "eval_tests"],
+        [sys.executable, "-B", "-m", "unittest", "discover", "-s", "eval_tests"],
         cwd=root, capture_output=True, text=True, timeout=20,
     ).returncode
 
