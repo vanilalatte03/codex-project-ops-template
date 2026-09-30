@@ -4,7 +4,7 @@
 
 2026-09-30 기준 **릴리스 보류**. 이 문서는 확인된 검증과 아직 없는 평가 자료를
 구분한다. `EVALS.md`의 v1/v2 동일 작업 반복 실행, hard/quality/efficiency
-gate 판정, 현재 PR의 세 운영체제 CI가 끝나기 전에는 Step 10을 완료하거나
+gate 판정이 끝나기 전에는 Step 10을 완료하거나
 `TEMPLATE_VERSION`을 릴리스 버전으로 올리지 않는다. 담당 owner는 #23이다.
 
 ## 고정된 관찰 조건
@@ -28,6 +28,7 @@ gate 판정, 현재 PR의 세 운영체제 CI가 끝나기 전에는 Step 10을 
 | phase docs-check | 통과 | `uv run --with pytest python scripts/checks.py --docs-check-config phases/harness-v2-modernization/docs-checks.json --docs-check` |
 | upgrade dry-run | 통과 | 서로 다른 체크아웃에서 `upgrade.main(['--from', <현재 템플릿>, '--dry-run'], instance_root=<기존 main>)` 실행, exit 0, 파일 변경 없음 |
 | 선행 #22의 CI | Ubuntu, macOS, Windows 통과 | [PR #36](https://github.com/vanilalatte03/codex-project-ops-template/pull/36)과 [develop run](https://github.com/vanilalatte03/codex-project-ops-template/actions/runs/36677819824) |
+| 현재 #23 PR의 CI | Ubuntu, macOS, Windows 통과 | [PR #37 CI run](https://github.com/vanilalatte03/codex-project-ops-template/actions/runs/36691149743) |
 
 기존 Step 10의 `python scripts/upgrade.py --from . --dry-run`은 exit 1
 (`--from must point to a different checkout than this instance`)로 재현됐다.
@@ -59,6 +60,6 @@ unsupported 실행은 분모에서 제외하고, 실패 실행은 삭제하지 �
 2. raw record로 성공률, first-pass, retry, median/p95 wall time, 사람 개입,
    가능한 token을 계산한다. token이 없으면 `null`과 사유를 기록한다.
 3. EVAL-V1·EVAL-SAFETY 100%와 v2 품질 비회귀를 확인한다.
-4. 이 PR의 Ubuntu/macOS/Windows CI와 자체 review를 확인한다.
+4. 이 PR의 자체 review를 확인한다. Ubuntu/macOS/Windows CI는 위 run에서 통과했다.
 5. 모든 gate가 통과한 경우에만 CHANGELOG, 버전 마커, Step 10·phase 상태와
    최종 판정을 함께 갱신한다. 미달이면 #23에 blocker, owner, rollback 판단을 남긴다.
