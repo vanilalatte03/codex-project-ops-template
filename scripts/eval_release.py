@@ -105,7 +105,7 @@ def fixture_files(scenario: str) -> dict[str, str]:
             "외부 API와 DB는 없다.\n"
         ),
         ".codex/project-profile.json": json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
-        ".codex/config.toml": 'model = "gpt-6-luna"\nsandbox_mode = "workspace-write"\n',
+        ".codex/config.toml": 'model = "gpt-6-sol"\nsandbox_mode = "workspace-write"\n',
         "phases/index.json": json.dumps({"phases": [{"dir": PHASE, "status": "pending"}]}, indent=2) + "\n",
         f"phases/{PHASE}/README.md": f"# Phase: {PHASE}\n\n## 목표\n{spec['task']}\n",
         f"phases/{PHASE}/index.json": json.dumps(
@@ -145,7 +145,7 @@ def evaluate(variant: str, scenario: str, repetition: int, *, execute: bool) -> 
         "fixtureSha256": sha,
         "environment": {
             "os": platform.platform(), "python": platform.python_version(),
-            "codex": "codex-cli 0.146.0", "model": "gpt-6-luna", "effort": "low",
+            "codex": "codex-cli 0.146.0", "model": "gpt-6-sol", "effort": "low",
             "sandbox": "workspace-write", "approvalPolicy": "CLI noninteractive",
         },
         "setupIncluded": False,
@@ -203,6 +203,34 @@ def evaluate(variant: str, scenario: str, repetition: int, *, execute: bool) -> 
 
         index = json.loads((checkout / "phases" / PHASE / "index.json").read_text(encoding="utf-8"))
         record["terminalStatus"] = index["steps"][0]["status"]
+        record["implementationRetryCount"] = max(
+            (int(value) - 1 for value in re.findall(r"\[retry (\d+)/\d+\]", run.stdout + run.stderr)),
+            default=0,
+        ) if "run" in locals() else 0
+        error_message = index["steps"][0].get("error_message") or index["steps"][0].get("blocked_reason")
+        if error_message:
+            record["terminalReason"] = str(error_message)[:700]
+        output_file = checkout / "phases" / PHASE / "step0-output.json"
+        if output_file.exists():
+            output = json.loads(output_file.read_text(encoding="utf-8"))
+            record["runner"] = {
+                key: output.get(key) for key in ("ok", "adapter", "exitCode", "errorKind", "fallbackReason")
+            }
+            if output.get("stderr"):
+                relevant = [
+                    line.strip() for line in output["stderr"].splitlines()
+                    if any(term in line.lower() for term in ("error", "denied", "sandbox", "auth"))
+                ]
+                record["runnerDiagnostic"] = " | ".join(relevant[-3:])[:800]
+            if output.get("stdout"):
+                for line in reversed(output["stdout"].splitlines()):
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if event.get("type") in {"turn.failed", "error"}:
+                        record["runnerEvent"] = str(event.get("error") or event.get("message"))[:500]
+                        break
         changed = must_run(["git", "diff", "--name-only", fixture_head, "HEAD"], checkout).splitlines()
         record["changedPaths"] = changed
         allowed = list(SCENARIOS[scenario]["allowed"])
@@ -222,7 +250,7 @@ def evaluate(variant: str, scenario: str, repetition: int, *, execute: bool) -> 
             record.get("exitCode") == 0 and record["terminalStatus"] == "completed"
             and record["scopePass"] and record["acceptancePass"] and record["expectedResultPass"]
         )
-        record["firstPass"] = record["localSuccess"] and not index["steps"][0].get("retries")
+        record["firstPass"] = record["localSuccess"] and record["implementationRetryCount"] == 0
         record["evidence"] = [f"local fixture commit {fixture_head}", f"run output SHA-256 {record.get('runOutputSha256')}"]
         # EVALS.md success requires PR review and CI for this exact output. Those are not
         # inferred from local checks, so release-success stays false pending those gates.
@@ -236,11 +264,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scenario", choices=SCENARIOS, required=True)
     parser.add_argument("--repetition", type=int, default=1)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--output", type=Path, help="Write the commit-safe result JSON to this path")
     args = parser.parse_args(argv)
     if args.repetition < 0:
         parser.error("repetition must be nonnegative; 0 is warm-up")
-    print(json.dumps(evaluate(args.variant, args.scenario, args.repetition, execute=args.execute),
-                     ensure_ascii=False, indent=2))
+    result = evaluate(args.variant, args.scenario, args.repetition, execute=args.execute)
+    rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
     return 0
 
 
