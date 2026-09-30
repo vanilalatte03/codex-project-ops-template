@@ -70,6 +70,12 @@
       "status": "completed",
       "summary": "v2 DAG cycle과 ready set을 검증하고 기본 2개·최대 4개 구현만 병렬화하며 자원 충돌 회피, 직렬 PR 병합, index 정합화와 재개 경로를 추가했다."
     },
-    { "step": 10, "name": "release-eval", "status": "pending" }
+    {
+      "step": 10,
+      "name": "release-eval",
+      "issue": 23,
+      "status": "completed",
+      "summary": "고정 fixture의 v1/v2 DOCS·CODE 출력과 V1·SAFETY·RESUME·DEPS 계약을 기록하고 로컬 테스트·자체 리뷰·세 운영체제 CI로 릴리스 gate를 확인했다. DOCS·CODE 측정은 비용 사유로 각 1회이며 성능 향상은 주장하지 않는다."
+    }
   ]
 }

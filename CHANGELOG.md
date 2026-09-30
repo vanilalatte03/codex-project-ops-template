@@ -6,13 +6,19 @@
 형식, doctor 검사 등)를 먼저 확인합니다. 절차는
 [guides/UPGRADE.md](guides/UPGRADE.md)를 따릅니다.
 
-## Unreleased
+## 2026.09.30
+
+### Added
+- #23 릴리스 평가 fixture, 격리 실행기, v1/v2 계약 반복 원자료와 결과 재검증
+  테스트를 추가했습니다.
 
 ### Documentation
 - #22의 v2 DAG ready set, 기본 2개·최대 4개 구현 동시성, 공유 자원 충돌 회피와
   직렬 PR 병합 계약을 README, guides, skills, architecture에 반영했습니다.
-- #23의 릴리스 평가 진행 기록과 별도 체크아웃을 사용하는 upgrade dry-run 절차를
-  추가했습니다. 대표 작업의 v1/v2 반복 평가와 릴리스 판정은 진행 중입니다.
+- #23의 릴리스 평가와 별도 체크아웃을 사용하는 upgrade dry-run 절차를
+  기록했습니다. DOCS·CODE 각 1회 측정은 동률의 로컬 성공률과 재시도를 보였으며,
+  V1·SAFETY는 양쪽 3/3 계약을 통과했습니다. 세 운영체제 CI와 자체 리뷰를
+  확인했으며, 단일 표본으로 성능 향상을 주장하지 않습니다.
 
 ## 2026.09.04.1
 
