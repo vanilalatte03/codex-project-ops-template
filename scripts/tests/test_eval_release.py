@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import json
 
 import eval_release
 
@@ -42,3 +43,14 @@ def test_fixture_hash_is_stable_and_excludes_variant():
         second = eval_release.fixture_hash(eval_release.fixture_files(scenario))
         assert first == second
         assert len(first) == 64
+
+
+def test_build_gate_parses_source_without_creating_bytecode(tmp_path):
+    eval_release.write_files(tmp_path, eval_release.fixture_files("code"))
+    profile = json.loads((tmp_path / ".codex/project-profile.json").read_text(encoding="utf-8"))
+    command = profile["commands"]["build"][0]
+
+    result = subprocess.run(command, cwd=tmp_path, shell=True, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert not list(tmp_path.rglob("__pycache__"))

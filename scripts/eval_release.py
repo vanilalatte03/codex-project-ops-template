@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import re
 import subprocess
@@ -59,7 +60,10 @@ SCENARIOS = {
 
 
 def run_command(args: list[str], cwd: Path, *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", timeout=timeout)
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    return subprocess.run(
+        args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", timeout=timeout, env=env,
+    )
 
 
 def must_run(args: list[str], cwd: Path, *, timeout: int = 60) -> str:
@@ -83,8 +87,11 @@ def fixture_files(scenario: str) -> dict[str, str]:
         "profile": "backend",
         "guardMode": "soft",
         "commands": {
-            "test": ["python -m unittest discover -s eval_tests"],
-            "build": ["python -m compileall -q eval_pkg"],
+            "test": ["python -B -m unittest discover -s eval_tests"],
+            "build": [
+                "python -B -c \"import ast,pathlib; [ast.parse(p.read_text(encoding='utf-8')) "
+                "for p in pathlib.Path('eval_pkg').glob('*.py')]\""
+            ],
         },
     }
     step = (
@@ -170,7 +177,7 @@ def evaluate(variant: str, scenario: str, repetition: int, *, execute: bool) -> 
         record["status"] = "fixture-only"
         return record
 
-    with tempfile.TemporaryDirectory(prefix="harness-release-eval-") as temp:
+    with tempfile.TemporaryDirectory(prefix="harness-release-eval-", ignore_cleanup_errors=True) as temp:
         checkout = Path(temp) / "checkout"
         must_run(["git", "clone", "--quiet", "--no-hardlinks", str(ROOT), str(checkout)], ROOT, timeout=120)
         must_run(["git", "checkout", "--detach", BASES[variant]], checkout)
